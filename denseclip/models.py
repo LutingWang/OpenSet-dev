@@ -1,12 +1,11 @@
 from collections import OrderedDict
-from typing import Tuple, Union
 
-import numpy as np
-import torch
-import torch.nn.functional as F
-from torch import nn
 from timm.models.layers import drop_path, trunc_normal_
 from mmdet.models.builder import BACKBONES
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+
 
 class Bottleneck(nn.Module):
     expansion = 4
@@ -103,6 +102,7 @@ class AttentionPool2d(nn.Module):
         global_feat = x[:, :, 0]
         feature_map = x[:, :, 1:].reshape(B, -1, H, W)
         return global_feat, feature_map
+
 
 @BACKBONES.register_module()
 class CLIPResNet(nn.Module):
@@ -286,7 +286,6 @@ class CLIPResNetWithAttention(nn.Module):
             return tuple(outs)
 
 
-
 class LayerNorm(nn.LayerNorm):
     """Subclass torch's LayerNorm to handle fp16."""
 
@@ -353,7 +352,6 @@ class Transformer(nn.Module):
         return self.resblocks(x)
 
 
-
 class Attention(nn.Module):
     def __init__(self, dim, num_heads=8, qkv_bias=False, qk_scale=None, attn_drop=0., proj_drop=0.):
         super().__init__()
@@ -388,6 +386,7 @@ class Attention(nn.Module):
         x = self.proj(x)
         x = self.proj_drop(x)
         return x
+
 
 class TransformerDecoderLayer(nn.Module):
     def __init__(
@@ -480,7 +479,6 @@ class CLIPVisionTransformer(nn.Module):
                 nn.GroupNorm(1, embed_dim),
                 nn.MaxPool2d(kernel_size=4, stride=4),
             )
-
         
     def init_weights(self, pretrained=None):
         pretrained = pretrained or self.pretrained
@@ -514,7 +512,6 @@ class CLIPVisionTransformer(nn.Module):
         x = x.permute(0, 2, 1)  # shape = [*, grid ** 2, width]
         x = torch.cat([self.class_embedding.to(x.dtype) + torch.zeros(x.shape[0], 1, x.shape[-1], dtype=x.dtype, device=x.device), x], dim=1)  # shape = [*, grid ** 2 + 1, width]
 
-
         pos = self.positional_embedding.to(x.dtype)
         cls_pos = pos[0,:] + self.class_embedding.to(x.dtype)
         spatial_pos = F.interpolate(pos[1:,].reshape(1, self.spatial_size, self.spatial_size, C).permute(0, 3, 1, 2), size=(H, W), mode='bilinear')
@@ -536,6 +533,7 @@ class CLIPVisionTransformer(nn.Module):
             features[i] = ops[i](features[i])
 
         return tuple(features)
+
 
 @BACKBONES.register_module()
 class CLIPTextEncoder(nn.Module):
@@ -585,7 +583,6 @@ class CLIPTextEncoder(nn.Module):
              
             u, w = self.load_state_dict(state_dict, False)
             print(u, w, 'are misaligned params in text encoder')
-
 
     def build_attention_mask(self):
         # lazily create causal attention mask, with full attention between the vision tokens
@@ -658,7 +655,6 @@ class CLIPTextContextEncoder(nn.Module):
             u, w = self.load_state_dict(state_dict, False)
             print(u, w, 'are misaligned params in text encoder')
 
-
     def build_attention_mask(self):
         # lazily create causal attention mask, with full attention between the vision tokens
         # pytorch uses additive attention mask; fill with -inf
@@ -688,6 +684,7 @@ class CLIPTextContextEncoder(nn.Module):
         x = x[torch.arange(x.shape[0]), eos_indx] @ self.text_projection
         x = x.reshape(B, K, self.embed_dim)
         return x
+
 
 def print_model_info(state_dict: dict):
     vit = "visual.proj" in state_dict
@@ -767,7 +764,6 @@ class ContextDecoder(nn.Module):
             nn.init.constant_(m.bias, 0)
             nn.init.constant_(m.weight, 1.0)
 
-    
     def forward(self, text, visual):
         B, N, C = visual.shape
         visual = self.memory_proj(visual)

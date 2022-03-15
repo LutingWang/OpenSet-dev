@@ -1,14 +1,12 @@
-
-from typing import Any, Union, List
-import torch
-
+from functools import lru_cache
+from typing import Union, List
 import gzip
 import html
 import os
-from functools import lru_cache
 
 import ftfy
 import regex as re
+import torch
 
 
 @lru_cache()
@@ -137,6 +135,7 @@ class SimpleTokenizer(object):
 
 
 _tokenizer = SimpleTokenizer()
+
 
 def tokenize(texts: Union[str, List[str]], context_length: int = 77, truncate: bool = False) -> torch.LongTensor:
     """

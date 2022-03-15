@@ -1,23 +1,17 @@
 # Copyright (c) OpenMMLab. All rights reserved.
-import warnings
-
-import torch
-import torch.nn.functional as F
-
 from mmdet.core import bbox2result
 from mmdet.models.builder import DETECTORS, build_backbone, build_head, build_neck
 from mmdet.models.detectors.single_stage import SingleStageDetector
 from mmdet.models.detectors.two_stage import TwoStageDetector
-from mmdet.utils import get_root_logger
+import torch
+import torch.nn.functional as F
 import torch.nn as nn
 
 from .utils import tokenize
 
+
 @DETECTORS.register_module()
 class DenseCLIP_RetinaNet(SingleStageDetector):
-    """
-    DenseCLIP for RetinaNet
-    """
 
     def __init__(self,
                  backbone,
@@ -74,7 +68,6 @@ class DenseCLIP_RetinaNet(SingleStageDetector):
         self.gamma = nn.Parameter(torch.ones(text_dim) * 1e-4)
 
     def extract_feat(self, img, use_seg_loss=False, dummy=False):
-        """Directly extract features from the backbone+neck."""
         x = self.backbone(img)
         text_features = self.compute_text_features(x, dummy=dummy)
         score_maps = self.compute_score_maps(x, text_features)
@@ -266,12 +259,8 @@ class DenseCLIP_RetinaNet(SingleStageDetector):
         return det_bboxes, det_labels
 
 
-
 @DETECTORS.register_module()
 class DenseCLIP_MaskRCNN(TwoStageDetector):
-    """
-    DenseCLIP for Mask-RCNN
-    """
 
     def __init__(self,
                  backbone,
