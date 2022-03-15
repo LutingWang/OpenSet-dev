@@ -1,12 +1,14 @@
-from functools import lru_cache
-from typing import Union, List
 import gzip
 import html
 import os
+import os.path as osp
+from functools import lru_cache
+from typing import Union, List
 
 import ftfy
 import regex as re
 import torch
+from mmcv.runner import TextLoggerHook
 
 
 @lru_cache()
@@ -170,3 +172,17 @@ def tokenize(texts: Union[str, List[str]], context_length: int = 77, truncate: b
         result[i, :len(tokens)] = torch.tensor(tokens)
 
     return result
+
+
+def odps_init():
+
+    def _dump_log(*args, **kwargs):
+        return 
+
+    TextLoggerHook._dump_log = _dump_log
+    if not osp.exists('data'):
+        os.symlink('/data/oss_bucket_0', 'data')
+    if not osp.exists('pretrained'):
+        os.symlink('/data/oss_bucket_0/ckpts', 'pretrained')
+    if not osp.exists('work_dirs'):
+        os.symlink('/data/oss_bucket_0/work_dirs', 'work_dirs')

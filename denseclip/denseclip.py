@@ -1,11 +1,11 @@
 # Copyright (c) OpenMMLab. All rights reserved.
+import torch
+import torch.nn.functional as F
+import torch.nn as nn
 from mmdet.core import bbox2result
 from mmdet.models.builder import DETECTORS, build_backbone, build_head, build_neck
 from mmdet.models.detectors.single_stage import SingleStageDetector
 from mmdet.models.detectors.two_stage import TwoStageDetector
-import torch
-import torch.nn.functional as F
-import torch.nn as nn
 
 from .utils import tokenize
 

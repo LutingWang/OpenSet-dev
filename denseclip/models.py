@@ -1,10 +1,10 @@
 from collections import OrderedDict
 
-from timm.models.layers import drop_path, trunc_normal_
-from mmdet.models.builder import BACKBONES
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from timm.models.layers import drop_path, trunc_normal_
+from mmdet.models.builder import BACKBONES
 
 
 class Bottleneck(nn.Module):

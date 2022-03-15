@@ -1,5 +1,6 @@
 import argparse
 import os
+import sys; sys.path.insert(0, '')
 import warnings
 
 import mmcv
@@ -9,12 +10,13 @@ from mmcv.cnn import fuse_conv_bn
 from mmcv.parallel import MMDataParallel, MMDistributedDataParallel
 from mmcv.runner import (get_dist_info, init_dist, load_checkpoint,
                          wrap_fp16_model)
-
 from mmdet.apis import multi_gpu_test, single_gpu_test
 from mmdet.datasets import (build_dataloader, build_dataset,
                             replace_ImageToTensor)
 from mmdet.models import build_detector
+
 import denseclip
+
 
 def parse_args():
     parser = argparse.ArgumentParser(
@@ -214,4 +216,5 @@ def main():
 
 
 if __name__ == '__main__':
+    denseclip.utils.odps_init()
     main()

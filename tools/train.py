@@ -202,14 +202,5 @@ def main():
 
 
 if __name__ == '__main__':
-    from mmcv.runner import TextLoggerHook
-
-    def _dump_log(*args, **kwargs):
-        return 
-
-    TextLoggerHook._dump_log = _dump_log
-    if not osp.exists('data'):
-        os.symlink('/data/oss_bucket_0', 'data')
-    if not osp.exists('pretrained'):
-        os.symlink('/data/oss_bucket_0/ckpts', 'pretrained')
+    denseclip.utils.odps_init()
     main()

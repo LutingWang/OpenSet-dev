@@ -4,7 +4,7 @@ verify_ssl = true
 name = "pypi"
 
 [packages]
-mmcv = "==1.4.4"
+mmcv_full = "==1.4.6"
 torch = {file = "https://download.pytorch.org/whl/cpu/torch-1.9.1-cp38-none-macosx_11_0_arm64.whl"}
 torchvision = {file = "https://download.pytorch.org/whl/cpu/torchvision-0.10.0-cp38-cp38-macosx_11_0_arm64.whl"}
 timm = "*"
@@ -24,6 +24,7 @@ terminaltables = "*"
 typing-extensions = "*"
 Cython = "*"
 cityscapesScripts = "*"
+easydict = "*"
 
 [dev-packages]
 
