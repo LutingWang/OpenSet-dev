@@ -1,15 +1,15 @@
 _base_ = [
-    '../configs/_base_/models/mask_rcnn_r50_fpn.py',
-    '../configs/_base_/datasets/coco_instance_clip.py',
-    # '../configs/_base_/schedules/schedule_1x.py',
-    '../configs/_base_/default_runtime.py'
+    '../_base_/models/mask_rcnn_r50_fpn.py',
+    '../_base_/datasets/coco_instance_clip.py',
+    # '../_base_/schedules/schedule_1x.py',
+    '../_base_/default_runtime.py'
 ]
 
 model = dict(
-    pretrained='pretrained/RN50.pt',
+    pretrained='pretrained/RN101.pt',
     backbone=dict(
         type='CLIPResNet',
-        layers=[3, 4, 6, 3],
+        layers=[3, 4, 23, 3],
         output_dim=1024,
         input_resolution=1344,
         style='pytorch'))

@@ -20,7 +20,7 @@ pai -name pytorch180
     -Dscript=\"file:///tmp/${PROJECT_NAME}.tar.gz\"
     -DentryFile=\"${ENTRY_FILE}\"
     -DworkerCount=${GPUS}
-    -DuserDefinedParameters=\"${CONFIG} --no-log-file --work-dir data/work_dirs/${JOB_NAME} --launcher pytorch ${PY_ARGS}\"
+    -DuserDefinedParameters=\"${CONFIG} --no-log-file --work-dir work_dirs/${JOB_NAME} --launcher pytorch ${PY_ARGS}\"
     -Dbuckets=\"oss://mvap-data/zhax/wangluting/?role_arn=acs:ram::1367265699002728:role/${ROLEARN}4pai&host=cn-zhangjiakou.oss.aliyuncs.com\";
 "
     # -Dcluster=\"{\\\"worker\\\":{\\\"gpu\\\":${GPUS}00}}\"

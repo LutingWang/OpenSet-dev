@@ -1,15 +1,16 @@
 _base_ = [
-    '_base_/models/retinanet_r50_fpn.py',
-    '_base_/datasets/coco_detection_clip.py',
-    '_base_/default_runtime.py'
+    '../_base_/models/mask_rcnn_r50_fpn.py',
+    '../_base_/datasets/coco_instance_clip.py',
+    # '../_base_/schedules/schedule_1x.py',
+    '../_base_/default_runtime.py'
 ]
 
 model = dict(
-    type='DenseCLIP_RetinaNet',
+    type='DenseCLIP_MaskRCNN',
     pretrained='pretrained/RN101.pt',
     context_length=5,
-    clip_head=False,
     seg_loss=True,
+    clip_head=False,
     text_dim=512,
     backbone=dict(
         type='CLIPResNetWithAttention',
@@ -37,11 +38,10 @@ model = dict(
         type='FPN',
         in_channels=[256, 512, 1024, 2048 + 80],
         out_channels=256,
-        start_level=1,
-        add_extra_convs='on_input',
-        num_outs=5))
+        num_outs=5)
+    )
 # optimizer
-optimizer = dict(type='AdamW', lr=0.0001, weight_decay=0.0001,
+optimizer = dict(type='AdamW', lr=0.0002, weight_decay=0.0001,
         paramwise_cfg=dict(custom_keys={'backbone': dict(lr_mult=0.1),
                                         'text_encoder': dict(lr_mult=0.0),
                                         'norm': dict(decay_mult=0.)}))

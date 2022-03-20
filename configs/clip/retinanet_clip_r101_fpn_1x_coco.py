@@ -1,14 +1,14 @@
 _base_ = [
-    '_base_/models/retinanet_r50_fpn.py',
-    '_base_/datasets/coco_detection_clip.py',
-    '_base_/default_runtime.py'
+    '../_base_/models/retinanet_r50_fpn.py',
+    '../_base_/datasets/coco_detection_clip.py',
+    '../_base_/default_runtime.py'
 ]
 
 model = dict(
-    pretrained='pretrained/RN50.pt',
+    pretrained='pretrained/RN101.pt',
     backbone=dict(
         type='CLIPResNet',
-        layers=[3, 4, 6, 3],
+        layers=[3, 4, 23, 3],
         output_dim=1024,
         input_resolution=1344,
         style='pytorch'))
