@@ -1,6 +1,9 @@
 __pycache__
 .ipynb_checkpoints
-**/.DS_Store
-work_dirs
+.DS_Store
 *.pth
 data
+mmdet
+pretrained
+todd
+work_dirs

@@ -12,7 +12,7 @@ ENTRY_FILE=${ENTRY_FILE:-tools/train.py}
 WORKBENCH=${WORKBENCH:-search_algo_quality_dev}  # search_algo_quality_dev, imac_dev
 ROLEARN=${ROLEARN:-searchalgo}  # searchalgo, imac
 
-tar -zcf /tmp/${PROJECT_NAME}.tar.gz --exclude work_dirs --exclude data .
+tar -zchf /tmp/${PROJECT_NAME}.tar.gz --exclude work_dirs --exclude data --exclude pretrained --exclude .git .
 cmd_oss="
 set odps.algo.hybrid.deploy.info=LABEL:V100:OPER_EQUAL;
 use ${WORKBENCH};

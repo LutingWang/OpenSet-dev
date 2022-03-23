@@ -1,9 +1,10 @@
+# dataset settings
 dataset_type = 'CocoDataset'
 data_root = 'data/coco/'
-IMAGE_MEAN = [v * 255 for v in (0.48145466, 0.4578275, 0.40821073)]
-IMAGE_VAR = [v * 255 for v in (0.26862954, 0.26130258, 0.27577711)]
 img_norm_cfg = dict(
-    mean=IMAGE_MEAN, std=IMAGE_VAR, to_rgb=True)
+    mean=[v * 255 for v in (0.48145466, 0.4578275, 0.40821073)], 
+    std=[v * 255 for v in (0.26862954, 0.26130258, 0.27577711)], 
+    to_rgb=True)
 train_pipeline = [
     dict(type='LoadImageFromFile'),
     dict(type='LoadAnnotations', with_bbox=True),

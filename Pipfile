@@ -25,6 +25,8 @@ typing-extensions = "*"
 Cython = "*"
 cityscapesScripts = "*"
 easydict = "*"
+ipdb = "*"
+todd = {editable = true, path = "./../todd"}
 
 [dev-packages]
 
