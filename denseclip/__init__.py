@@ -1,12 +1,12 @@
 import todd
 
 from . import utils
-from .coco import CocoZSLDataset
+from .coco import CocoZSLSeenDataset, CocoZSLUnseenDataset, CocoGZSLDataset
 from .denseclip import DenseCLIP_RetinaNet
-from .models import CLIPResNet, CLIPTextEncoder, CLIPVisionTransformer, CLIPResNetWithAttention
+from .model import CLIPResNet, CLIPResNetWithoutAttention, CLIPResNetWithAttention
 
 
 __all__ = [
-    'utils', 'CocoZSLDataset', 'DenseCLIP_RetinaNet', 'CLIPResNet', 'CLIPTextEncoder',
-    'CLIPVisionTransformer', 'CLIPResNetWithAttention',
+    'utils', 'CocoZSLSeenDataset', 'CocoZSLUnseenDataset', 'CocoGZSLDataset', 
+    'DenseCLIP_RetinaNet', 'CLIPResNet', 'CLIPResNetWithoutAttention', 'CLIPResNetWithAttention',
 ]

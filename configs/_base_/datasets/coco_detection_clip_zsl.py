@@ -2,19 +2,20 @@ _base_ = [
     'coco_detection_clip.py',
 ]
 
-dataset_type = 'CocoZSLDataset'
 data_root = 'data/coco/'
 data = dict(
+    # samples_per_gpu=2,
+    # workers_per_gpu=6,
     train=dict(
-        type=dataset_type,
-        ann_file=data_root + 'annotations/instances_train2017_48_17.json',
+        type='CocoZSLSeenDataset',
+        ann_file=data_root + 'annotations/instances_train2017_48_17_.json',
     ),
     val=dict(
-        type=dataset_type,
-        ann_file=data_root + 'annotations/instances_val2017_48_17.json',
+        type='CocoGZSLDataset',
+        ann_file=data_root + 'annotations/instances_val2017_48_17_.json',
     ),
     test=dict(
-        type=dataset_type,
-        ann_file=data_root + 'annotations/instances_val2017_48_17.json',
+        type='CocoGZSLDataset',
+        ann_file=data_root + 'annotations/instances_val2017_48_17_.json',
     ),
 )
