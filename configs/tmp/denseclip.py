@@ -7,40 +7,44 @@ _base_ = [
 
 model = dict(
     type='DenseCLIP_RetinaNet',
-    context_length=5,
-    clip_head=False,
-    seg_loss=True,
+    distiller=dict(
+        teacher_cfg=dict(
+            pretrained='pretrained/RN50.pt',
+            context_length=13,  # including sot(1), prompt(8), text(3), and eot(1)
+            prompt_length=8,
+            input_resolution=1344,
+        ),
+        weight_transfer={
+            'student.backbone': 'teacher.visual',
+        }
+    ),
     backbone=dict(
+        _delete_=True,
         type='CLIPResNetWithAttention',
         layers=[3, 4, 6, 3],
         output_dim=1024,
-        input_resolution=1344,
-        style='pytorch',
-        init_cfg=dict(type='Pretrained', checkpoint='pretrained/RN50.pt')),
-    text_encoder=dict(
-        type='CLIPTextContextEncoder',
-        context_length=13,
-        embed_dim=1024,
-        transformer_width=512,
-        transformer_heads=8,
-        transformer_layers=12,
-        style='pytorch'),
+        heads=32,
+        input_resolution=1344),
     context_decoder=dict(
-        type='ContextDecoder',
-        transformer_width=256,
-        transformer_heads=4,
-        transformer_layers=3,
-        visual_dim=1024,
-        dropout=0.1,
-        outdim=1024,
-        style='pytorch'),
-    neck=dict(
-        type='FPN',
-        in_channels=[256, 512, 1024, 2048 + 80],
-        out_channels=256,
-        start_level=1,
-        add_extra_convs='on_input',
-        num_outs=5))
+        in_features=1024,
+        hidden_features=256,
+        num_heads=4,
+        num_layers=3,
+        dropout=0.1),
+    bbox_head=dict(
+        num_classes=48,
+        anchor_generator=dict(
+            octave_base_scale=8,
+            scales_per_octave=1,
+            ratios=[1.0],
+        ),
+        init_cfg=dict(
+            type='Normal',
+            layer='Conv2d',
+            std=0.01,
+        ),
+    ),
+)
 # optimizer
 optimizer = dict(
     _delete_=True,

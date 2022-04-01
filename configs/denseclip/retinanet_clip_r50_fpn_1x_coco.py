@@ -12,6 +12,7 @@ model = dict(
         output_dim=1024,
         input_resolution=1344,
         style='pytorch',
+        pretrained='pretrained/RN50.pt',
         init_cfg=dict(type='Pretrained', checkpoint='pretrained/RN50.pt')))
 
 # optimizer

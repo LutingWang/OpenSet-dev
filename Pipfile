@@ -27,6 +27,7 @@ cityscapesScripts = "*"
 easydict = "*"
 ipdb = "*"
 todd = {editable = true, path = "./../todd"}
+clip = {path = "./../CLIP"}
 
 [dev-packages]
 
