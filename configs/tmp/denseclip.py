@@ -16,7 +16,34 @@ model = dict(
         ),
         weight_transfer={
             'student.backbone': 'teacher.visual',
-        }
+        },
+        adapts=dict(
+            seg_mask=dict(
+                type='DenseCLIPMask',
+                tensor_names=['batch_input_shape', 'gt_bboxes', 'gt_labels'],
+                num_classes=48,
+            ),
+        ),
+        losses=dict(
+            seg=dict(
+                type='BCEWithLogitsLoss',
+                tensor_names=['seg_map', 'seg_mask'],
+            ),
+            image=dict(
+                type='MSELoss',
+                tensor_names=['image_features', 'teacher_image_features'],
+            )
+        ),
+        schedulers=dict(
+            warmup=dict(
+                type='WarmupScheduler',
+                tensor_names=[
+                    # 'loss_cls', 
+                    'loss_seg',
+                ],
+                iter_=2000,
+            ),
+        ),
     ),
     backbone=dict(
         _delete_=True,
@@ -49,13 +76,13 @@ model = dict(
 optimizer = dict(
     _delete_=True,
     type='AdamW', lr=0.0001, weight_decay=0.0001,
-    paramwise_cfg=dict(custom_keys={
-        'backbone': dict(lr_mult=0.1),
-        'text_encoder': dict(lr_mult=0.0),
-        'norm': dict(decay_mult=0.),
-    }),
+    # paramwise_cfg=dict(custom_keys={
+    #     'backbone': dict(lr_mult=0.1),
+    #     'text_encoder': dict(lr_mult=0.0),
+    #     'norm': dict(decay_mult=0.),
+    # }),
 )
 optimizer_config = dict(
     _delete_=True,
-    grad_clip=dict(max_norm=0.1, norm_type=2),
+    grad_clip=dict(max_norm=20),
 )

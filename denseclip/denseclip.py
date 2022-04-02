@@ -1,9 +1,8 @@
-from typing import Any, Dict, Tuple, Union
-
-import einops
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import clip
 import clip.model
+import einops
 import todd
 import torch
 import torch.nn.functional as F
@@ -28,6 +27,10 @@ class VpeForwardPreHook(nn.Module):
         self._vpe = vpe
         self._vpi = vpi
     
+    def register(self, module: nn.Module):
+        module._parameters.pop('positional_embedding')
+        module.register_forward_pre_hook(self)
+
     def forward(self, module: clip.model.AttentionPool2d, input_: Tuple[torch.Tensor]):
         _, _, h, w = input_[0].shape
         vpi = einops.rearrange(self._vpi[:h, :w], 'h w -> (h w)')
@@ -42,7 +45,10 @@ class PromptFrowardHook(nn.Module):
         self._prompt = nn.Parameter(torch.randn(prompt_length, embedding_dim))
         nn.init.trunc_normal_(self._prompt)
 
-    def __call__(self, module: nn.Module, input_: Any, output: Any):
+    def register(self, module: nn.Module):
+        module.register_forward_hook(self)
+
+    def forward(self, module: nn.Module, input_: Any, output: Any):
         output[:, 1:1 + self._prompt_length] = self._prompt
 
 
@@ -50,16 +56,38 @@ class CLIPDistiller(todd.distillers.SingleTeacherDistiller):
     teacher: clip.model.CLIP
 
     def __init__(self, *args, teacher_cfg: ConfigDict, **kwargs):
-        teacher: nn.Module = torch.jit.load(teacher_cfg.pretrained, map_location='cpu')
-        state_dict = teacher.state_dict()
-        is_vit = 'visual.proj' in state_dict
-        v_name = 'visual' if is_vit else 'visual.attnpool'
-        vpe_name = v_name + '.positional_embedding'
+        teacher = torch.jit.load(teacher_cfg.pretrained, map_location='cpu')
+        teacher = self.customize_teacher(
+            teacher, teacher_cfg.input_resolution, teacher_cfg.context_length,
+        )
+        super().__init__(*args, teacher=teacher, **kwargs)
 
-        if state_dict['input_resolution'] != teacher_cfg.input_resolution:
-            # state_dict['input_resolution'] = teacher_cfg.input_resolution
+        self._vpe_forward_pre_hook = VpeForwardPreHook(
+            vpe=self.teacher.visual.attnpool.positional_embedding, 
+        )
+        self._prompt_forward_hook = PromptFrowardHook(
+            prompt_length=teacher_cfg.prompt_length, 
+            embedding_dim=self.teacher.token_embedding.embedding_dim,
+        )
+        self._tokenizer = SimpleTokenizer(
+            bpe_path='denseclip/bpe_simple_vocab_16e6.txt.gz', 
+            context_length=teacher_cfg.context_length,
+            prompt_length=teacher_cfg.prompt_length,
+        )
+
+        self._vpe_forward_pre_hook.register(self.teacher.visual.attnpool)
+        self._prompt_forward_hook.register(self.teacher.token_embedding)
+
+    @staticmethod
+    def customize_teacher(teacher: nn.Module, input_resolution: int, context_length: int) -> nn.Module:
+        state_dict = teacher.state_dict()
+        assert 'visual.proj' not in state_dict
+        vpe_name = 'visual.attnpool.positional_embedding'
+
+        if state_dict['input_resolution'] != input_resolution:
+            # state_dict['input_resolution'] = input_resolution
             source_resolution = state_dict['input_resolution'] // 32
-            target_resolution = teacher_cfg.input_resolution // 32
+            target_resolution = input_resolution // 32
             assert source_resolution ** 2 + 1 == state_dict[vpe_name].shape[0]
 
             cls_pos = state_dict[vpe_name][[0]]
@@ -70,29 +98,58 @@ class CLIPDistiller(todd.distillers.SingleTeacherDistiller):
             vpe = torch.cat([cls_pos, spatial_pos])
             state_dict[vpe_name] = vpe
 
-        if state_dict['context_length'] > teacher_cfg.context_length:
+        if state_dict['context_length'] > context_length:
             # state_dict['context_length'] = teacher_cfg.context_length
-            state_dict['positional_embedding'] = state_dict['positional_embedding'][:teacher_cfg.context_length]
+            state_dict['positional_embedding'] = state_dict['positional_embedding'][:context_length]
 
         teacher = clip.model.build_model(state_dict).float()
-        super().__init__(*args, teacher=teacher, **kwargs)
+        return teacher
 
-        module: nn.Module = todd.utils.getattr_recur(self.teacher, v_name)
-        self._vpe_forward_pre_hook = VpeForwardPreHook(
-            vpe=module._parameters.pop('positional_embedding'), 
-        )
-        module.register_forward_pre_hook(self._vpe_forward_pre_hook)
-
-        module = self.teacher.token_embedding
-        self._prompt_forward_hook = PromptFrowardHook(
-            prompt_length=teacher_cfg.prompt_length, 
-            embedding_dim=module.embedding_dim,
-        )
-        module.register_forward_hook(self._prompt_forward_hook)
-    
     @property
     def num_features(self) -> int:
         return self.teacher.visual.output_dim
+
+    @property
+    def device(self) -> torch.device:
+        return self._prompt_forward_hook._prompt.device
+
+    def encode_image(self, image: torch.Tensor) -> torch.Tensor:
+        return self.teacher.encode_image(image)
+
+    def encode_text(self, texts: Tuple[str]) -> torch.Tensor:
+        tokens = self._tokenizer.tokenize(texts, self.device)
+        text_embeddings = self.teacher.encode_text(tokens)
+        return text_embeddings
+
+
+class Classifier(nn.Module):
+    def __init__(self, tau: float = 0.07):
+        super().__init__()
+        self._tau = tau
+        self._weight = None
+        self._bias = nn.Parameter(torch.FloatTensor(data=[-4]))  # TODO: change to -4.18
+
+    def set_weight(self, weight: Optional[torch.Tensor]):
+        if weight is not None:
+            weight = F.normalize(weight, dim=-1)
+        self._weight = weight
+
+    def forward(
+        self, 
+        module: Any, 
+        input_: Any, 
+        output: torch.Tensor, 
+        with_bias: bool = True,
+    ) -> torch.Tensor:
+        x = F.normalize(output, dim=1)
+        x = torch.einsum(
+            'b c h w, b k c -> b k h w', 
+            x, self._weight,
+        )
+        x = x / self._tau
+        if with_bias:
+            x = x + self._bias
+        return x
 
 
 @DETECTORS.register_module()
@@ -107,132 +164,96 @@ class DenseCLIP_RetinaNet(SingleStageDetector):
         self, 
         *args,
         context_decoder: dict,
-        tau=0.07,
+        refine: bool = True,
         **kwargs,
     ):
         # super().__init__(init_cfg)
         super().__init__(*args, pretrained=None, **kwargs)
-        self.context_decoder = ContextDecoder(**context_decoder)
-
-        self.tau = tau
-        self.gamma = nn.Parameter(torch.FloatTensor(data=[1e-4]))
+        self._context_decoder = ContextDecoder(**context_decoder) if refine else None
+        self._gamma = nn.Parameter(torch.FloatTensor(data=[1e-4]))
+        self._classifier = Classifier()
 
     def _init_with_distiller(self):
-        self._tokenizer = SimpleTokenizer(
-            bpe_path='denseclip/bpe_simple_vocab_16e6.txt.gz', 
-            context_length=self.distiller.teacher.context_length,
-            prompt_length=self.distiller._prompt_forward_hook._prompt_length,
-        )
-        module = self.backbone.attnpool
-        module._parameters.pop('positional_embedding'), 
-        module.register_forward_pre_hook(self.distiller._vpe_forward_pre_hook)
+        self.distiller._vpe_forward_pre_hook.register(self.backbone.attnpool)
 
-        retina_cls = nn.Conv2d(
-            self.bbox_head.feat_channels,
+        conv = nn.Conv2d(
+            self.bbox_head.feat_channels, 
             self.distiller.num_features,  # NOTE: assumes single anchor
             kernel_size=3, padding=1,
+            bias=False,
         )
-        retina_cls.register_forward_hook(self._retina_cls_forward_hook)
-        self.bbox_head.retina_cls = retina_cls
-        self._retina_cls_bias = nn.Parameter(torch.FloatTensor(data=[-4]))
+        conv.register_forward_hook(self._classifier)
+        self.bbox_head.retina_cls = conv
 
-    def extract_feat(self, img: torch.Tensor) -> torch.Tensor:
+    def extract_feat(self, img: torch.Tensor, **kwargs) -> torch.Tensor:
         x, visual_embeddings = self.backbone(img)
+        visual_embeddings = einops.rearrange(visual_embeddings, 'n b c -> b n c')
+
+        classes = self.CLASSES if self.training else CocoGZSLDataset.CLASSES
+        text_embeddings = self.distiller.encode_text(classes)
+        text_embeddings = einops.repeat(text_embeddings, 'k c -> b k c', b=img.shape[0])
+        text_embeddings = self.refine_text_embeddings(visual_embeddings, text_embeddings)
+        self._classifier.set_weight(text_embeddings)
 
         x = self.neck(x)
+
         if self.training:
             return x, visual_embeddings
-        else:
-            return x
 
-    def get_score_map(self, x, visual_embeddings):
-        b, _, h, w = x.shape
-        visual_embeddings = einops.rearrange(visual_embeddings, 'n b c -> b n c', n=h * w + 1)
+        return x
 
-        text_embeddings = einops.repeat(self.text_embeddings, 'k d -> b k d', b=b)
-        text_diff = self.context_decoder(text_embeddings, visual_embeddings)
-        text_embeddings = text_embeddings + self.gamma * text_diff
+    def refine_text_embeddings(self, visual_embeddings: torch.Tensor, text_embeddings: torch.Tensor) -> torch.Tensor:
+        if self._context_decoder is not None:
+            context_embeddings = self._context_decoder(text_embeddings, visual_embeddings)
+            text_embeddings = text_embeddings + self._gamma * context_embeddings
+        return text_embeddings
 
-        text_embeddings = F.normalize(text_embeddings, dim=-1)
-        spatial_embeddings = F.normalize(visual_embeddings[:, 1:, :], dim=-1)
-        score_map = torch.einsum('b k c, b n c -> b k n', text_embeddings, spatial_embeddings) / self.tau
-        score_map = einops.rearrange(score_map, 'b k (h w) -> b k h w', h=h, w=w)
-        return score_map
-
-    @property
-    def classes(self) -> CocoDataset:
-        return self.CLASSES if self.training else CocoGZSLDataset.CLASSES
-
-    @property
-    def tokens(self) -> torch.Tensor:
-        return self._tokenizer.tokenize(self.classes, self.gamma.device)
-
-    def _retina_cls_forward_hook(self, module: nn.Module, input_: Any, output: torch.Tensor):
-        output = einops.rearrange(output, 'b (a c) h w -> b a c h w', c=self.distiller.num_features)
-        output = torch.einsum(
-            'b a c h w, k c -> b a k h w', 
-            F.normalize(output, dim=2),
-            F.normalize(self.text_embeddings, dim=-1),
-        ) / self.tau + self._retina_cls_bias
-        output = einops.rearrange(output, 'b a k h w -> b (a k) h w')
-        return output
-
-    def forward_train(self,
-                      img,
-                      img_metas,
-                      gt_bboxes,
-                      gt_labels,
-                      gt_bboxes_ignore=None):
-        self.text_embeddings: torch.Tensor = self.distiller.teacher.encode_text(self.tokens)
+    def forward_train(
+        self,
+        img: torch.Tensor,
+        img_metas: List[dict],
+        gt_bboxes: List[torch.Tensor],
+        gt_labels: List[torch.Tensor],
+        gt_bboxes_ignore: Optional[List[torch.Tensor]] = None,
+    ) -> Dict[str, Any]:
         super(SingleStageDetector, self).forward_train(img, img_metas)
         x, visual_embeddings = self.extract_feat(img)
-        score_map = self.get_score_map(x[2], visual_embeddings)
-        losses = self.bbox_head.forward_train(x, img_metas, gt_bboxes,
-                                              gt_labels, gt_bboxes_ignore)
-        # self.distiller.teacher.encode_image(img)
-        losses['loss_seg'] = self.compute_seg_loss(img, score_map, img_metas, gt_bboxes, gt_labels)
-        self.text_embeddings = None
-        return losses
+        losses = self.bbox_head.forward_train(
+            x, img_metas, gt_bboxes, gt_labels, gt_bboxes_ignore,
+        )
 
-    def compute_seg_loss(self, img, score_map, img_metas, gt_bboxes, gt_labels):
-        target, mask = self.build_seg_target(img, img_metas, gt_bboxes, gt_labels)
-        score_map = F.interpolate(score_map, target.shape[2:], mode='bilinear')
-        loss = F.binary_cross_entropy(score_map.sigmoid(), target, weight=mask, reduction='sum')
-        loss = loss / mask.sum() * 0.5
-        return loss
+        h, w = x[2].shape[-2:]
+        cls_embedding = visual_embeddings[:, 0, :]
+        spatial_embeddings = visual_embeddings[:, 1:, :]
+        spatial_embeddings = einops.rearrange(spatial_embeddings, 'b (h w) c -> b c h w', h=h, w=w)
 
-    def build_seg_target(self, img, img_metas, gt_bboxes, gt_labels):
-        B, C, H, W = img.shape
-        H //= 4
-        W //= 4
-        target = torch.zeros(B, len(self.CLASSES), H, W)
-        mask = torch.zeros(B, 1, H, W)
-        for i, (bboxes, gt_labels) in enumerate(zip(gt_bboxes, gt_labels)):
-            bboxes = (bboxes / 4).long()
-            bboxes[:, 0] = bboxes[:, 0].clamp(0, W - 1)
-            bboxes[:, 1] = bboxes[:, 1].clamp(0, H - 1)
-            bboxes[:, 2] = bboxes[:, 2].clamp(0, W - 1)
-            bboxes[:, 3] = bboxes[:, 3].clamp(0, H - 1)
-            for bbox, label in zip(bboxes, gt_labels):
-                target[i, label, bbox[1]: bbox[3], bbox[0]: bbox[2]] = 1
-                mask[i, :, bbox[1]: bbox[3], bbox[0]: bbox[2]] = 1
-        mask = mask.expand(-1, len(self.CLASSES), -1, -1)
-        target = target.to(img.device)
-        mask = mask.to(img.device)
-        return target, mask
+        kd_losses = self.distiller.distill(dict(
+            batch_input_shape=img_metas[0]['batch_input_shape'],
+            gt_bboxes=gt_bboxes,
+            gt_labels=gt_labels,
+            seg_map=self._classifier(None, None, spatial_embeddings, with_bias=False),
+            image_features=cls_embedding,
+            teacher_image_features=self.distiller.teacher.encode_image(img),
+        ))
+        return {**losses, **kd_losses}
 
     def forward_test(self, *args, **kwargs) -> Any:
         old_coc = self.bbox_head.cls_out_channels
         old_nc = self.bbox_head.num_classes
 
         self.bbox_head.cls_out_channels -= self.bbox_head.num_classes
-        self.bbox_head.num_classes = len(self.classes)
+        self.bbox_head.num_classes = len(CocoGZSLDataset.CLASSES)
         self.bbox_head.cls_out_channels += self.bbox_head.num_classes
 
-        self.text_embeddings: torch.Tensor = self.distiller.teacher.encode_text(self.tokens)
         result = super().forward_test(*args, **kwargs)
-        self.text_embeddings = None
+        self.distiller.reset()
 
         self.bbox_head.cls_out_channels = old_coc
         self.bbox_head.num_classes = old_nc
         return result
+
+    def forward(self, *args, **kwargs) -> Any:
+        result = super().forward(*args, **kwargs)
+        self._classifier.set_weight(None)
+        return result
+

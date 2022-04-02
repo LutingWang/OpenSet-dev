@@ -2,6 +2,7 @@ from typing import Any, List, Tuple
 
 import clip.model
 import einops
+import todd.utils
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -37,20 +38,47 @@ class AttentionPool2d(clip.model.AttentionPool2d):
 
 
 class CLIPResNet(clip.model.ModifiedResNet):
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, frozen_stages: int = 1, norm_eval: bool = True, **kwargs):
         super().__init__(*args, **kwargs)
+        self._frozen_stages = frozen_stages
+        self._norm_eval = norm_eval
+
         self.layer1.register_forward_hook(self._layer_forward_hook)
         self.layer2.register_forward_hook(self._layer_forward_hook)
         self.layer3.register_forward_hook(self._layer_forward_hook)
         self.layer4.register_forward_hook(self._layer_forward_hook)
+        self._freeze_stages()
+        self._eval_norms()
 
     def _layer_forward_hook(self, module: nn.Module, input_: Any, output: torch.Tensor):
         self._outs.append(output)
+
+    def _freeze_stages(self):
+        if self._frozen_stages == 0:
+            return
+        for i in range(3):
+            todd.utils.freeze_model(getattr(self, f'conv{i + 1}'))
+            todd.utils.freeze_model(getattr(self, f'bn{i + 1}'))
+        for i in range(self._frozen_stages):
+            todd.utils.freeze_model(getattr(self, f'layer{i + 1}'))
+
+    def _eval_norms(self):
+        if not self.training or not self._norm_eval:
+            return
+        for module in self.modules():
+            # trick: eval have effect on BatchNorm only
+            if isinstance(module, nn.modules.batchnorm._BatchNorm):
+                module.eval()
 
     def forward(self, x: torch.Tensor) -> Tuple[List[torch.Tensor], Any]:
         self._outs = []
         x = super().forward(x)
         return self._outs, x
+
+    def train(self, mode: bool = True):
+        super().train(mode)
+        self._freeze_stages()
+        self._eval_norms()
 
 
 @BACKBONES.register_module()

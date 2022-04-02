@@ -36,7 +36,7 @@ INDEX_UNSEEN_48_17 = [i for i, c in enumerate(ALL_48_17) if c in UNSEEN_48_17]
 
 class ZSLDataset:
     # def __len__(self):
-    #     return 20
+    #     return 6
 
     def evaluate(self, *args, gpu_collect: bool = False, **kwargs) -> Any:
         return super().evaluate(*args, **kwargs)
