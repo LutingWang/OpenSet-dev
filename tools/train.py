@@ -17,7 +17,7 @@ from mmdet.datasets import build_dataset
 from mmdet.models import build_detector
 from mmdet.utils import collect_env, get_root_logger, setup_multi_processes
 
-from denseclip.utils import odps_init
+from denseclip.utils import has_debug_flag, odps_init
 
 
 def parse_args():
@@ -112,6 +112,8 @@ def main():
         torch.backends.cudnn.benchmark = True
 
     if args.debug:
+        os.environ['DEBUG'] = '011'
+    if has_debug_flag(1):
         cfg.data.train.ann_file = cfg.data.val.ann_file
         cfg.data.train.img_prefix = cfg.data.val.img_prefix
 

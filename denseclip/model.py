@@ -1,12 +1,19 @@
+import os
 from typing import Any, List, Tuple
 
 import clip.model
 import einops
+from denseclip.utils import has_debug_flag
 import todd.utils
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from mmdet.models.builder import BACKBONES
+from mmcv import ConfigDict
+from mmcv.ops import batched_nms
+from mmdet.core import DistancePointBBoxCoder
+from mmdet.models import BACKBONES, HEADS, RetinaHead, RPNHead
+
+from .prior_generator import AnchorGeneratorWithPos
 
 
 class AttentionPool2d(clip.model.AttentionPool2d):
@@ -152,3 +159,90 @@ class ContextDecoder(nn.TransformerDecoder):
         x = super().forward(text, visual)
         x = einops.rearrange(x, 'n b c -> b n c')
         return self._out_proj(x)
+
+
+class RPNHeadWithPos(RPNHead):
+    prior_generator: AnchorGeneratorWithPos
+
+    def _bbox_post_process(
+        self, 
+        mlvl_scores: List[torch.Tensor], 
+        mlvl_bboxes: List[torch.Tensor], 
+        mlvl_valid_anchors: List[torch.Tensor],
+        level_ids: int, 
+        cfg: ConfigDict, 
+        img_shape: Tuple[int], 
+        **kwargs,
+    ):
+        scores = torch.cat(mlvl_scores)
+        anchors = torch.cat(mlvl_valid_anchors)
+        rpn_bbox_pred = torch.cat(mlvl_bboxes)
+
+        if hasattr(self.prior_generator, '_with_pos') and self.prior_generator._with_pos:
+            if isinstance(self.bbox_coder, DistancePointBBoxCoder):
+                poses = anchors[:, 2:]
+                anchors = anchors[:, :2]
+            else:
+                poses = anchors[:, 4:]
+                anchors = anchors[:, :4]
+        else:
+            poses = None
+
+        proposals = self.bbox_coder.decode(
+            anchors, rpn_bbox_pred, max_shape=img_shape)
+        ids = torch.cat(level_ids)
+
+        if cfg.min_bbox_size >= 0:
+            w = proposals[:, 2] - proposals[:, 0]
+            h = proposals[:, 3] - proposals[:, 1]
+            valid_mask = (w > cfg.min_bbox_size) & (h > cfg.min_bbox_size)
+            if not valid_mask.all():
+                proposals = proposals[valid_mask]
+                scores = scores[valid_mask]
+                ids = ids[valid_mask]
+                if poses is not None:
+                    poses = poses[valid_mask]
+
+        if proposals.numel() > 0:
+            dets, keep = batched_nms(proposals, scores, ids, cfg.nms)
+            if poses is not None:
+                dets = torch.cat([dets, poses[keep]], dim=-1)
+        else:
+            return proposals.new_zeros(0, 9)
+
+        return dets[:cfg.max_per_img]
+
+
+@HEADS.register_module()
+class RetinaRPNHead(RetinaHead):
+    prior_generator: AnchorGeneratorWithPos
+
+    def forward_train(self, x, img_metas, gt_bboxes, gt_labels=None, gt_bboxes_ignore=None, proposal_cfg=None, **kwargs):
+        proposal_cfg = ConfigDict(
+            nms_pre=2000,
+            max_per_img=2 if has_debug_flag(3) else 8,
+            nms=dict(type='nms', iou_threshold=0.4),
+            min_bbox_size=224,
+        )
+        return super().forward_train(x, img_metas, gt_bboxes, gt_labels, gt_bboxes_ignore, proposal_cfg, **kwargs)
+
+    def get_bboxes(self, cls_scores: List[torch.Tensor], *args, **kwargs):
+        if not self.training:
+            return super().get_bboxes(cls_scores, *args, **kwargs)
+        cls_scores = [einops.reduce(
+            cls_score,
+            'b k h w -> b 1 h w',
+            reduction='max',
+        ) for cls_score in cls_scores]
+        with self.prior_generator.with_pos():
+            return super().get_bboxes(cls_scores, *args, **kwargs)
+
+    def _get_bboxes_single(self, *args, **kwargs):
+        if self.training:
+            return RPNHead._get_bboxes_single(self, *args, **kwargs)
+        return super()._get_bboxes_single(*args, **kwargs)
+
+    def _bbox_post_process(self, *args, **kwargs):
+        if self.training:
+            return RPNHeadWithPos._bbox_post_process(self, *args, **kwargs)
+        return super()._bbox_post_process(*args, **kwargs)

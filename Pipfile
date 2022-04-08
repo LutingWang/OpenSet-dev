@@ -28,6 +28,7 @@ easydict = "*"
 ipdb = "*"
 todd = {editable = true, path = "./../todd"}
 clip = {path = "./../CLIP"}
+lmdb = "*"
 
 [dev-packages]
 

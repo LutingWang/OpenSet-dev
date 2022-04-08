@@ -1,12 +1,17 @@
 import contextlib
 import io
 import logging
+import os
 from typing import Any, Optional, Tuple
 
+import lmdb
+import numpy as np
+from mmcv.parallel import DataContainer as DC
 from mmcv.utils import print_log
+import torch
+from denseclip.utils import has_debug_flag
 from mmdet.datasets import CocoDataset, DATASETS
 from mmdet.datasets.api_wrappers import COCOeval
-import numpy as np
 
 
 SEEN_65_15 = [
@@ -35,8 +40,10 @@ INDEX_UNSEEN_48_17 = [i for i, c in enumerate(ALL_48_17) if c in UNSEEN_48_17]
 
 
 class ZSLDataset:
-    # def __len__(self):
-    #     return 6
+    def __len__(self):
+        if has_debug_flag(2):
+            return 40
+        return super().__len__()
 
     def evaluate(self, *args, gpu_collect: bool = False, **kwargs) -> Any:
         return super().evaluate(*args, **kwargs)
@@ -49,6 +56,25 @@ class CocoZSLSeenDataset(ZSLDataset, CocoDataset):
         for i in SEEN_48_17
     ])
     PALETTE = list(PALETTE)
+
+    def __init__(self, *args, lmdb_file: Optional[str] = None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._lmdb_file = lmdb_file
+        if self._lmdb_file is not None:
+            self._env: lmdb.Environment = lmdb.open(self._lmdb_file, readonly=True, max_dbs=2)
+            self._train_db: lmdb._Database = self._env.open_db('train'.encode())
+
+    def prepare_train_img(self, idx: int) -> dict:
+        results = super().prepare_train_img(idx)
+        if self._lmdb_file is not None:
+            img_id = str(self.data_infos[idx]['id']).encode()
+            with self._env.begin(self._train_db) as txn:
+                buffer = txn.get(img_id)
+            buffer = io.BytesIO(buffer)
+            bboxes, bbox_embeddings = torch.load(buffer, map_location='cpu')
+            results['bboxes'] = DC(bboxes)
+            results['bbox_embeddings'] = DC(bbox_embeddings)
+        return results
 
 
 @DATASETS.register_module()
@@ -109,8 +135,8 @@ class CocoGZSLDataset(ZSLDataset, CocoDataset):
         if max_dets is not None:
             cocoEval.params.maxDets = list(max_dets)
 
-        # NOTE: for debug only
-        # cocoEval.params.imgIds = cocoEval.params.imgIds[:len(self)]
+        if has_debug_flag(2):
+            cocoEval.params.imgIds = cocoEval.params.imgIds[:len(self)]
 
         cocoEval.evaluate()
         cocoEval.accumulate()
@@ -127,3 +153,9 @@ class CocoGZSLDataset(ZSLDataset, CocoDataset):
             eval_results.update(self.summarize(cocoEval, logger, split_name=split))
 
         return eval_results
+
+
+@DATASETS.register_module()
+class CocoFeatureExtractionDataset(ZSLDataset, CocoDataset):
+    def prepare_test_img(self, idx):
+        return self.prepare_train_img(idx)

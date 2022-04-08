@@ -6,7 +6,7 @@ _base_ = [
 ]
 
 model = dict(
-    type='DenseCLIP_RetinaNet',
+    type='DenseCLIP_RetinaNetKD',
     distiller=dict(
         teacher_cfg=dict(
             pretrained='pretrained/RN50.pt',
@@ -48,12 +48,12 @@ model = dict(
             image=dict(
                 type='MSELoss',
                 tensor_names=['image_features', 'teacher_image_features'],
-                weight=1000,
+                weight=200,
             ),
             crop=dict(
                 type='MSELoss',
                 tensor_names=['crop_features', 'teacher_crop_features'],
-                weight=1000,
+                weight=2000,
             ),
         ),
         schedulers=dict(
@@ -63,7 +63,7 @@ model = dict(
                     # 'loss_cls', 
                     'loss_seg',
                     # 'loss_image',
-                    'loss_crop',
+                    # 'loss_crop',
                 ],
                 iter_=2000,
             ),
@@ -83,7 +83,7 @@ model = dict(
         num_layers=3,
         dropout=0.1),
     bbox_head=dict(
-        type='RetinaRPNHead',
+        # type='RetinaRPNHead',
         num_classes=48,
         anchor_generator=dict(
             type='AnchorGeneratorWithPos',

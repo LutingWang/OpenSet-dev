@@ -14,7 +14,6 @@ ROLEARN=${ROLEARN:-searchalgo}  # searchalgo, imac
 
 tar -zchf /tmp/${PROJECT_NAME}.tar.gz --exclude work_dirs --exclude data --exclude pretrained --exclude .git .
 cmd_oss="
-set odps.algo.hybrid.deploy.info=LABEL:V100:OPER_EQUAL;
 use ${WORKBENCH};
 pai -name pytorch180
     -Dscript=\"file:///tmp/${PROJECT_NAME}.tar.gz\"
@@ -23,5 +22,6 @@ pai -name pytorch180
     -DuserDefinedParameters=\"${CONFIG} --no-log-file --work-dir work_dirs/${JOB_NAME} --launcher pytorch ${PY_ARGS}\"
     -Dbuckets=\"oss://mvap-data/zhax/wangluting/?role_arn=acs:ram::1367265699002728:role/${ROLEARN}4pai&host=cn-zhangjiakou.oss.aliyuncs.com\";
 "
+# set odps.algo.hybrid.deploy.info=LABEL:V100:OPER_EQUAL;
     # -Dcluster=\"{\\\"worker\\\":{\\\"gpu\\\":${GPUS}00}}\"
 odpscmd -e "${cmd_oss}"
