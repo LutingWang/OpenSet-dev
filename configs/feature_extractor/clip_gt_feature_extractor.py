@@ -4,7 +4,7 @@ _base_ = [
 ]
 
 model = dict(
-    type='CLIPFeatureExtractor',
+    type='CLIPGTFeatureExtractor',
     lmdb_filepath='tmp.lmdb',
 )
 img_norm_cfg = dict(

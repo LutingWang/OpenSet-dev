@@ -1,17 +1,15 @@
 import contextlib
 import io
 import logging
-import os
 from typing import Any, Optional, Tuple
 
-import lmdb
 import numpy as np
+from denseclip.utils import has_debug_flag
 from mmcv.parallel import DataContainer as DC
 from mmcv.utils import print_log
-import torch
-from denseclip.utils import has_debug_flag
 from mmdet.datasets import CocoDataset, DATASETS
 from mmdet.datasets.api_wrappers import COCOeval
+from todd.datasets import LmdbDataset
 
 
 SEEN_65_15 = [
@@ -39,10 +37,11 @@ INDEX_SEEN_48_17 = [i for i, c in enumerate(ALL_48_17) if c in SEEN_48_17]
 INDEX_UNSEEN_48_17 = [i for i, c in enumerate(ALL_48_17) if c in UNSEEN_48_17]
 
 
-class ZSLDataset:
+@DATASETS.register_module()
+class CocoZSLDataset(CocoDataset):
     def __len__(self):
         if has_debug_flag(2):
-            return 40
+            return 20
         return super().__len__()
 
     def evaluate(self, *args, gpu_collect: bool = False, **kwargs) -> Any:
@@ -50,7 +49,7 @@ class ZSLDataset:
 
 
 @DATASETS.register_module()
-class CocoZSLSeenDataset(ZSLDataset, CocoDataset):
+class CocoZSLSeenDataset(CocoZSLDataset):
     CLASSES, PALETTE = zip(*[
         (CocoDataset.CLASSES[i], CocoDataset.PALETTE[i]) 
         for i in SEEN_48_17
@@ -59,26 +58,20 @@ class CocoZSLSeenDataset(ZSLDataset, CocoDataset):
 
     def __init__(self, *args, lmdb_file: Optional[str] = None, **kwargs):
         super().__init__(*args, **kwargs)
-        self._lmdb_file = lmdb_file
-        if self._lmdb_file is not None:
-            self._env: lmdb.Environment = lmdb.open(self._lmdb_file, readonly=True, max_dbs=2)
-            self._train_db: lmdb._Database = self._env.open_db('train'.encode())
+        self._lmdb = None if lmdb_file is None else LmdbDataset(filepath=lmdb_file, db='train')
 
     def prepare_train_img(self, idx: int) -> dict:
         results = super().prepare_train_img(idx)
-        if self._lmdb_file is not None:
-            img_id = str(self.data_infos[idx]['id']).encode()
-            with self._env.begin(self._train_db) as txn:
-                buffer = txn.get(img_id)
-            buffer = io.BytesIO(buffer)
-            bboxes, bbox_embeddings = torch.load(buffer, map_location='cpu')
+        if self._lmdb is not None:
+            img_id = self.data_infos[idx]['id']
+            bboxes, bbox_embeddings = self._lmdb[img_id]
             results['bboxes'] = DC(bboxes)
             results['bbox_embeddings'] = DC(bbox_embeddings)
         return results
 
 
 @DATASETS.register_module()
-class CocoZSLUnseenDataset(ZSLDataset, CocoDataset):
+class CocoZSLUnseenDataset(CocoZSLDataset):
     CLASSES, PALETTE = zip(*[
         (CocoDataset.CLASSES[i], CocoDataset.PALETTE[i]) 
         for i in UNSEEN_48_17
@@ -87,7 +80,7 @@ class CocoZSLUnseenDataset(ZSLDataset, CocoDataset):
 
 
 @DATASETS.register_module()
-class CocoGZSLDataset(ZSLDataset, CocoDataset):
+class CocoGZSLDataset(CocoZSLDataset):
     CLASSES, PALETTE = zip(*[
         (CocoDataset.CLASSES[i], CocoDataset.PALETTE[i]) 
         for i in ALL_48_17
@@ -156,6 +149,6 @@ class CocoGZSLDataset(ZSLDataset, CocoDataset):
 
 
 @DATASETS.register_module()
-class CocoFeatureExtractionDataset(ZSLDataset, CocoDataset):
+class CocoFeatureExtractionDataset(CocoZSLDataset):
     def prepare_test_img(self, idx):
         return self.prepare_train_img(idx)

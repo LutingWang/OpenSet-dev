@@ -105,6 +105,7 @@ def parse_args():
         default='none',
         help='job launcher')
     parser.add_argument('--local_rank', type=int, default=0)
+    parser.add_argument('--debug', action='store_true')
     args = parser.parse_args()
     if 'LOCAL_RANK' not in os.environ:
         os.environ['LOCAL_RANK'] = str(args.local_rank)
@@ -121,6 +122,8 @@ def parse_args():
 
 def main():
     args = parse_args()
+    if args.debug:
+        os.environ['DEBUG'] = '011'
 
     assert args.out or args.eval or args.format_only or args.show \
         or args.show_dir, \

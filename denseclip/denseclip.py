@@ -71,7 +71,7 @@ class CLIPDistiller(todd.distillers.SingleTeacherDistiller):
             embedding_dim=self.teacher.token_embedding.embedding_dim,
         )
         self._tokenizer = SimpleTokenizer(
-            bpe_path='denseclip/bpe_simple_vocab_16e6.txt.gz', 
+            bpe_path='clip/bpe_simple_vocab_16e6.txt.gz', 
             context_length=teacher_cfg.context_length,
             prompt_length=teacher_cfg.prompt_length,
         )
@@ -349,7 +349,7 @@ class DenseCLIP_RetinaNetKD(SingleStageDetector):
 
         teacher_crop_features = []
         crop_indices = []
-        prior_generator: AnchorGeneratorWithPos = self.bbox_head.anchor_generator
+        prior_generator: AnchorGeneratorWithPos = self.bbox_head.prior_generator
         with prior_generator.with_pos():
             anchor_list, valid_flag_list = self.bbox_head.get_anchors(
                 featmap_sizes=[featmap.shape[-2:] for featmap in x], 

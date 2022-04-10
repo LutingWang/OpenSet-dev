@@ -77,6 +77,21 @@ DenseCLIP/data
         └── *.jpg
 ```
 
+# Proposals
+
+```shell
+sh tools/odps_test.sh configs/rpn/rpn_r101_fpn_1x_coco_train.py data/ckpts/rpn_r101_fpn_2x_coco_20200131-24e3db1a.pth 8 --out data/proposals/rpn_r101_fpn_coco_train.pkl
+sh tools/odps_test.sh configs/rpn/rpn_r101_fpn_1x_coco_val.py data/ckpts/rpn_r101_fpn_2x_coco_20200131-24e3db1a.pth 8 --out data/proposals/rpn_r101_fpn_coco_test.pkl
+```
+
+# Extract features
+
+For proposals
+
+```shell
+sh tools/odps_train.sh debug configs/feature_extractor/clip_proposal_feature_extractor.py 8 --seed 3407 --cfg-options log_config.interval=1
+```
+
 # Resources
 
 Under `oss://mvap-data/zhax/wangluting/`
