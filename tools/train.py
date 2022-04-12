@@ -114,8 +114,10 @@ def main():
     if args.debug:
         os.environ['DEBUG'] = '011'
     if has_debug_flag(1):
-        cfg.data.train.ann_file = cfg.data.val.ann_file
-        cfg.data.train.img_prefix = cfg.data.val.img_prefix
+        if 'ann_file' in cfg.data.val:
+            cfg.data.train.ann_file = cfg.data.val.ann_file
+        if 'img_prefix' in cfg.data.val:
+            cfg.data.train.img_prefix = cfg.data.val.img_prefix
 
     # work_dir is determined in this priority: CLI > segment in file > filename
     if args.work_dir is not None:

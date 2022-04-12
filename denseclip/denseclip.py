@@ -178,7 +178,7 @@ class DenseCLIP_RetinaNet(SingleStageDetector):
         super().__init__(*args, pretrained=None, **kwargs)
         self._context_decoder = ContextDecoder(**context_decoder) if refine else None
         self._gamma = nn.Parameter(torch.FloatTensor(data=[1e-4]))
-        self._classifier = Classifier()
+        self._classifier = Classifier()  # TODO: bias need to be specified as -4.18
         self.bbox_head.retina_cls = nn.Conv2d(
             self.bbox_head.feat_channels, 
             self.backbone.output_dim,  # NOTE: assumes single anchor

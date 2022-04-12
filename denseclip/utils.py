@@ -1,21 +1,18 @@
 import os
 import os.path as osp
-import shutil
 from typing import Tuple
-
-import einops
 
 import clip.model
 import clip.simple_tokenizer
+import einops
 import lmdb
+import todd
 import torch
 import torch.nn.functional as F
 import torchvision.transforms as transforms
 import torchvision.transforms.functional as tf
 from mmcv.runner import TextLoggerHook
 from mmdet.datasets import PIPELINES
-
-import todd
 
 
 class SimpleTokenizer(clip.simple_tokenizer.SimpleTokenizer):
@@ -55,9 +52,9 @@ def odps_init():
     TextLoggerHook._dump_log = _dump_log
     if not osp.exists('data'):
         os.symlink('/data/oss_bucket_0', 'data')
-    if not osp.exists('local_data'):
-        os.mkdir('local_data')
-        shutil.copytree('data/coco/embeddings6.lmdb', 'local_data/embeddings6.lmdb')
+    # if not osp.exists('local_data'):
+    #     os.mkdir('local_data')
+    #     shutil.copytree('data/coco/embeddings6.lmdb', 'local_data/embeddings6.lmdb')
     if not osp.exists('pretrained'):
         os.symlink('/data/oss_bucket_0/ckpts', 'pretrained')
     if not osp.exists('work_dirs'):
@@ -96,11 +93,12 @@ def has_debug_flag(level: int) -> bool:
         1: use val dataset as train dataset
         2: use smaller datasets
         3: use fewer gt bboxes
+        4: cpu
 
     Note:
         Flag 1/2/3 are set by default when cuda is unavailable.
     """
-    if not torch.cuda.is_available() and level in [1, 2, 3]:
+    if not torch.cuda.is_available() and level in [1, 2, 3, 4]:
         return True
     flags = os.environ.get('DEBUG', '')
     flags += '0' * 10
