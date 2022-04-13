@@ -50,14 +50,14 @@ def odps_init():
         return 
 
     TextLoggerHook._dump_log = _dump_log
-    if not osp.exists('data'):
+    if not osp.lexists('data'):
         os.symlink('/data/oss_bucket_0', 'data')
-    # if not osp.exists('local_data'):
+    # if not osp.lexists('local_data'):
     #     os.mkdir('local_data')
     #     shutil.copytree('data/coco/embeddings6.lmdb', 'local_data/embeddings6.lmdb')
-    if not osp.exists('pretrained'):
+    if not osp.lexists('pretrained'):
         os.symlink('/data/oss_bucket_0/ckpts', 'pretrained')
-    if not osp.exists('work_dirs'):
+    if not osp.lexists('work_dirs'):
         os.symlink('/data/oss_bucket_0/work_dirs', 'work_dirs')
 
     logger.debug(f"ODPS initialization done with {os.listdir('.')}.")

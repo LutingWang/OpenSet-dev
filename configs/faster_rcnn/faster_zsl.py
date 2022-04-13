@@ -52,7 +52,7 @@ model = dict(
     roi_head=dict(
         bbox_head=dict(
             type='Shared2FCBBoxHeadZSL',
-            class_embeddings='data/prompt/CocoDataset.pth',
+            class_embeddings='data/coco/prompt/vild_CocoDataset.pth',
             num_classes=48,
         )
     )

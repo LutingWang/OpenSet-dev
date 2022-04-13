@@ -34,7 +34,7 @@ def vild(args):
 
     dataset: CustomDataset = DATASETS.get(args.dataset)
     classes = dataset.CLASSES
-    save_path = os.path.join(os.path.dirname(args.templates), f'{args.dataset}.pth')
+    save_path = os.path.join(os.path.dirname(args.templates), f'vild_{args.dataset}.pth')
 
     class_embeddings = []
     for template in tqdm(templates):
@@ -52,7 +52,7 @@ def parse_args():
     subparsers = parser.add_subparsers(help="Method")
     vild_parser = subparsers.add_parser('vild')
     vild_parser.add_argument('--pretrained', default='pretrained/RN50.pt')
-    vild_parser.add_argument('--templates', default='data/prompt/vild.py')
+    vild_parser.add_argument('--templates', default='data/coco/prompt/vild.py')
     vild_parser.add_argument('--dataset', default='CocoDataset', help="Used to get classes.")
     vild_parser.set_defaults(func=vild)
     args = parser.parse_args()
