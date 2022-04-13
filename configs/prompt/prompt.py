@@ -13,6 +13,7 @@ model = dict(
             text_only=True,
         ),
     ),
+    backbone=dict(),  # compat tools/test.py
 )
 dataset = dict(
     type='PromptDataset',

@@ -90,6 +90,14 @@ For proposals
 
 ```shell
 sh tools/odps_train.sh debug configs/feature_extractor/clip_proposal_feature_extractor.py 8 --seed 3407 --cfg-options log_config.interval=1
+# need to convert lmdb dataset to pth dataset
+sh tools/odps_train.sh prompt1 configs/prompt/prompt.py 1 --seed 3407
+```
+
+# ViLD class embeddings
+
+```shell
+python tools/class_embeddings.py vild
 ```
 
 # Resources

@@ -41,7 +41,7 @@ INDEX_UNSEEN_48_17 = [i for i, c in enumerate(ALL_48_17) if c in UNSEEN_48_17]
 class CocoZSLDataset(CocoDataset):
     def __len__(self):
         if has_debug_flag(2):
-            return 20
+            return 4
         return super().__len__()
 
     def evaluate(self, *args, gpu_collect: bool = False, **kwargs) -> Any:

@@ -1,162 +1,16 @@
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple
 
-import clip
-import clip.model
 import einops
-import todd
+from denseclip.prompt import CLIPDistiller, Classifier
 import torch
-import torch.nn.functional as F
 import torch.nn as nn
-import torchvision.transforms as transforms
-from mmcv import ConfigDict
 from mmdet.core import AssignResult, anchor_inside_flags
 from mmdet.models import DETECTORS, RetinaHead, SingleStageDetector
 
 from .coco import CocoGZSLDataset
 from .model import CLIPResNetWithAttention, ContextDecoder, RetinaRPNHead
 from .prior_generator import AnchorGeneratorWithPos
-from .utils import SimpleTokenizer, encode_bboxes
-
-
-class VpeForwardPreHook(nn.Module):
-    def __init__(self, vpe: torch.Tensor):
-        super().__init__()
-        resolution = round((vpe.shape[0] - 1) ** 0.5)
-        assert resolution ** 2 + 1 == vpe.shape[0]
-        vpi = torch.arange(resolution ** 2)
-        vpi = einops.rearrange(vpi, '(h w) -> h w', h=resolution)
-        self._vpe = vpe
-        self._vpi = vpi
-    
-    def register(self, module: nn.Module):
-        module._parameters.pop('positional_embedding')
-        module.register_forward_pre_hook(self)
-
-    def forward(self, module: clip.model.AttentionPool2d, input_: Tuple[torch.Tensor]):
-        _, _, h, w = input_[0].shape
-        vpi = einops.rearrange(self._vpi[:h, :w], 'h w -> (h w)')
-        vpi = torch.cat((vpi.new_tensor([0]), vpi + 1))
-        module.positional_embedding = self._vpe[vpi]
-
-
-class PromptFrowardHook(nn.Module):
-    def __init__(self, prompt_length: int, embedding_dim: int):
-        super().__init__()
-        self._prompt_length = prompt_length
-        self._prompt = nn.Parameter(torch.randn(prompt_length, embedding_dim))
-        nn.init.trunc_normal_(self._prompt)
-
-    def register(self, module: nn.Module):
-        module.register_forward_hook(self)
-
-    def forward(self, module: nn.Module, input_: Any, output: Any):
-        output[:, 1:1 + self._prompt_length] = self._prompt
-
-
-class CLIPDistiller(todd.distillers.SingleTeacherDistiller):
-    teacher: clip.model.CLIP
-
-    def __init__(self, *args, teacher_cfg: ConfigDict, **kwargs):
-        teacher = torch.jit.load(teacher_cfg.pretrained, map_location='cpu')
-        teacher = self.customize_teacher(
-            teacher, teacher_cfg.input_resolution, teacher_cfg.context_length,
-        )
-        super().__init__(*args, teacher=teacher, **kwargs)
-
-        self._vpe_forward_pre_hook = VpeForwardPreHook(
-            vpe=self.teacher.visual.attnpool.positional_embedding, 
-        )
-        self._prompt_forward_hook = PromptFrowardHook(
-            prompt_length=teacher_cfg.prompt_length, 
-            embedding_dim=self.teacher.token_embedding.embedding_dim,
-        )
-        self._tokenizer = SimpleTokenizer(
-            bpe_path='clip/bpe_simple_vocab_16e6.txt.gz', 
-            context_length=teacher_cfg.context_length,
-            prompt_length=teacher_cfg.prompt_length,
-        )
-        self._preprocess = transforms.Compose([
-            transforms.Resize(teacher_cfg.input_resolution, interpolation=transforms.InterpolationMode.BICUBIC),
-            transforms.CenterCrop(teacher_cfg.input_resolution),
-        ])
-
-        self._vpe_forward_pre_hook.register(self.teacher.visual.attnpool)
-        self._prompt_forward_hook.register(self.teacher.token_embedding)
-
-    @staticmethod
-    def customize_teacher(teacher: nn.Module, input_resolution: int, context_length: int) -> nn.Module:
-        state_dict = teacher.state_dict()
-        assert 'visual.proj' not in state_dict
-        vpe_name = 'visual.attnpool.positional_embedding'
-
-        if state_dict['input_resolution'] != input_resolution:
-            # state_dict['input_resolution'] = input_resolution
-            source_resolution = state_dict['input_resolution'] // 32
-            target_resolution = input_resolution // 32
-            assert source_resolution ** 2 + 1 == state_dict[vpe_name].shape[0]
-
-            cls_pos = state_dict[vpe_name][[0]]
-            spatial_pos = state_dict[vpe_name][1:]
-            spatial_pos = einops.rearrange(spatial_pos, '(h w) dim -> 1 dim h w', h=source_resolution)
-            spatial_pos = F.interpolate(spatial_pos, size=(target_resolution,) * 2, mode='bilinear')  # TODO: supress warning
-            spatial_pos = einops.rearrange(spatial_pos, '1 dim h w -> (h w) dim')
-            vpe = torch.cat([cls_pos, spatial_pos])
-            state_dict[vpe_name] = vpe
-
-        if state_dict['context_length'] > context_length:
-            # state_dict['context_length'] = teacher_cfg.context_length
-            state_dict['positional_embedding'] = state_dict['positional_embedding'][:context_length]
-
-        teacher = clip.model.build_model(state_dict).float()
-        return teacher
-
-    @property
-    def num_features(self) -> int:
-        return self.teacher.visual.output_dim
-
-    @property
-    def device(self) -> torch.device:
-        return self._prompt_forward_hook._prompt.device
-
-    @torch.no_grad()
-    def encode_image(self, image: torch.Tensor) -> torch.Tensor:
-        image = self._preprocess(image)
-        return self.teacher.encode_image(image)
-
-    def encode_text(self, texts: Tuple[str]) -> torch.Tensor:
-        tokens = self._tokenizer.tokenize(texts, self.device)
-        text_embeddings = self.teacher.encode_text(tokens)
-        return text_embeddings
-
-
-class Classifier(nn.Module):
-    def __init__(self, tau: float = 0.07):
-        super().__init__()
-        self._tau = tau
-        self._weight = None
-        self._bias = nn.Parameter(torch.FloatTensor(data=[-4]))  # TODO: change to -4.18
-
-    def set_weight(self, weight: Optional[torch.Tensor]):
-        if weight is not None:
-            weight = F.normalize(weight, dim=-1)
-        self._weight = weight
-
-    def forward(
-        self, 
-        module: Any, 
-        input_: Any, 
-        output: torch.Tensor, 
-        with_bias: bool = True,
-    ) -> torch.Tensor:
-        x = F.normalize(output, dim=1)
-        x = torch.einsum(
-            'b c h w, b k c -> b k h w', 
-            x, self._weight,
-        )
-        x = x / self._tau
-        if with_bias:
-            x = x + self._bias
-        return x
+from .utils import encode_bboxes
 
 
 @DETECTORS.register_module()

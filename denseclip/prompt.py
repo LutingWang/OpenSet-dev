@@ -220,12 +220,20 @@ class PromptDataset(PthDataset):
             item['labels'] = DC(labels)
         return item
 
-    def evaluate(self, results: List[torch.Tensor], logger: Optional[logging.Logger], **kwargs):
-        accuracy = todd.utils.Accuracy()
+    def evaluate(self, results: List[torch.Tensor], logger: Optional[logging.Logger] = None, **kwargs) -> Dict[str, float]:
+        if logger is None:
+            logger = self._logger
+        pos_acc = todd.utils.Accuracy(topks=(1, 2, 3, 5, 10))
+        neg_acc = todd.utils.BinaryAccuracy(thrs=np.linspace(0.05, 0.5, 10))
         for i, result in tqdm(enumerate(results)):
             proposals, crops, max_overlaps, labels = super().__getitem__(i)
-            accuracy(result, labels.to(result.device))
-        return {f'top{k}': v for k, v in accuracy.todict().items()}
+            pos_acc.evaluate(result[labels >= 0], labels[labels >= 0].to(result.device))
+            neg_acc.evaluate(result.softmax(-1), labels.to(result.device))
+        logger.info(f"Positive Accuracies\n{pos_acc}\n")
+        logger.info(f"Negative Accuracies\n{neg_acc}\n")
+        pos_acc = {f'top{k}': v for k, v in pos_acc.todict().items()}
+        neg_acc = {f'thr{k:.1f}': v for k, v in neg_acc.todict()['accuracies'].items()}
+        return {**pos_acc, **neg_acc}
 
 
 @DETECTORS.register_module()
@@ -279,7 +287,7 @@ class PromptTrainer(BaseModule):
             return self.forward_test(*args, **kwargs)
 
     def train_step(self, data: Dict[str, List[torch.Tensor]], optimizer: Optional[torch.optim.Optimizer] = None):
-        losses = self.forward_train(**data)
+        losses = self(**data)
         loss, log_vars = self._parse_losses(losses)
         outputs = dict(loss=loss, log_vars=log_vars, num_samples=len(data['crops']))
         return outputs

@@ -9,6 +9,7 @@ ipdb
 lmdb
 matplotlib
 numpy
+pandas
 pycocotools
 regex
 scipy
