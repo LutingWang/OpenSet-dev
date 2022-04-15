@@ -112,12 +112,15 @@ def main():
         torch.backends.cudnn.benchmark = True
 
     if args.debug:
+        # os.environ['CUDA_LAUNCH_BLOCKING'] = '1'
         os.environ['DEBUG'] = '011'
     if has_debug_flag(1):
         if 'ann_file' in cfg.data.val:
             cfg.data.train.ann_file = cfg.data.val.ann_file
         if 'img_prefix' in cfg.data.val:
             cfg.data.train.img_prefix = cfg.data.val.img_prefix
+        if 'proposal_file' in cfg.data.val:
+            cfg.data.train.proposal_file = cfg.data.val.proposal_file
 
     # work_dir is determined in this priority: CLI > segment in file > filename
     if args.work_dir is not None:

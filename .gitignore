@@ -5,7 +5,8 @@ __pycache__
 data
 local_data
 mmdet
-pretrained
 todd
 work_dirs
 clip
+pretrained/*
+!pretrained/.gitkeep

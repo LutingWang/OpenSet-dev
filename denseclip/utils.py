@@ -12,7 +12,6 @@ import torch.nn.functional as F
 import torchvision.transforms as transforms
 import torchvision.transforms.functional as tf
 from mmcv.runner import TextLoggerHook
-from mmdet.datasets import PIPELINES
 
 
 class SimpleTokenizer(clip.simple_tokenizer.SimpleTokenizer):
@@ -52,9 +51,6 @@ def odps_init():
     TextLoggerHook._dump_log = _dump_log
     if not osp.lexists('data'):
         os.symlink('/data/oss_bucket_0', 'data')
-    # if not osp.lexists('local_data'):
-    #     os.mkdir('local_data')
-    #     shutil.copytree('data/coco/embeddings6.lmdb', 'local_data/embeddings6.lmdb')
     if not osp.lexists('pretrained'):
         os.symlink('/data/oss_bucket_0/ckpts', 'pretrained')
     if not osp.lexists('work_dirs'):
@@ -103,10 +99,3 @@ def has_debug_flag(level: int) -> bool:
     flags = os.environ.get('DEBUG', '')
     flags += '0' * 10
     return bool(int(flags[level]))
-
-
-@PIPELINES.register_module()
-class LoadEmbeddings:
-    def __init__(self, lmdb_filepath: str):
-        self._lmdb_filepath = lmdb_filepath
-        self._env: lmdb.Environment = lmdb.open

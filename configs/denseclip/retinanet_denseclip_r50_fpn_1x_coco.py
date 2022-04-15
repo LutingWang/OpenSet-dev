@@ -16,8 +16,8 @@ model = dict(
         output_dim=1024,
         input_resolution=1344,
         style='pytorch',
-        pretrained='pretrained/RN50.pt',
-        init_cfg=dict(type='Pretrained', checkpoint='pretrained/RN50.pt')),
+        pretrained='pretrained/clip/RN50.pt',
+        init_cfg=dict(type='Pretrained', checkpoint='pretrained/clip/RN50.pt')),
     text_encoder=dict(
         type='CLIPTextContextEncoder',
         context_length=13,
@@ -25,7 +25,7 @@ model = dict(
         transformer_width=512,
         transformer_heads=8,
         transformer_layers=12,
-        pretrained='pretrained/RN50.pt',
+        pretrained='pretrained/clip/RN50.pt',
         style='pytorch'),
     context_decoder=dict(
         type='ContextDecoder',

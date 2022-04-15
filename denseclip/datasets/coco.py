@@ -1,9 +1,10 @@
 import contextlib
 import io
 import logging
-from typing import Any, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
+import torch
 from denseclip.utils import has_debug_flag
 from mmcv.parallel import DataContainer as DC
 from mmcv.utils import print_log
@@ -41,8 +42,21 @@ INDEX_UNSEEN_48_17 = [i for i, c in enumerate(ALL_48_17) if c in UNSEEN_48_17]
 class CocoZSLDataset(CocoDataset):
     def __len__(self):
         if has_debug_flag(2):
-            return 4
+            return 10
         return super().__len__()
+
+    def load_proposals(self, proposal_file: str) -> List[torch.Tensor]:
+        proposals = super().load_proposals(proposal_file)
+        if 'deleted_images' in self.coco.dataset:
+            deleted_images = self.coco.dataset['deleted_images']
+            proposals = [p[:, :4] for i, p in enumerate(proposals) if i not in deleted_images]
+            assert len(proposals) == len(self.data_infos)  # len(self) is set manually when debugging
+        return proposals
+
+    def pre_pipeline(self, results: Dict[str, Any]):
+        super().pre_pipeline(results)
+        if self.proposals is not None:
+            results['bbox_fields'].append('proposals')
 
     def evaluate(self, *args, gpu_collect: bool = False, **kwargs) -> Any:
         return super().evaluate(*args, **kwargs)

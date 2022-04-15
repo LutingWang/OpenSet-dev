@@ -7,7 +7,7 @@ import torch.nn as nn
 from mmdet.core import AssignResult, anchor_inside_flags
 from mmdet.models import DETECTORS, RetinaHead, SingleStageDetector
 
-from .coco import CocoGZSLDataset
+from .datasets import CocoGZSLDataset
 from .model import CLIPResNetWithAttention, ContextDecoder, RetinaRPNHead
 from .prior_generator import AnchorGeneratorWithPos
 from .utils import encode_bboxes

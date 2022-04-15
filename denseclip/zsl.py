@@ -6,7 +6,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from mmdet.models import DETECTORS, RetinaHead, Shared2FCBBoxHead
 
-from .coco import SEEN_48_17, ALL_48_17, CocoGZSLDataset
+from .datasets import SEEN_48_17, ALL_48_17, CocoGZSLDataset
 from .prompt import Classifier
 
 
@@ -59,7 +59,7 @@ class Shared2FCBBoxHeadZSL(Shared2FCBBoxHead):
         self._seen_class_embeddings = nn.Parameter(class_embeddings[SEEN_48_17], requires_grad=False)
         self._all_class_embeddings = nn.Parameter(class_embeddings[ALL_48_17], requires_grad=False)
         self._bg_class_embeddings = nn.Parameter(torch.zeros_like(class_embeddings[[0]]), requires_grad=True)
-        self.fc_cls = Classifier(bias=-4.18)  # TODO: bias need to be specified as -4.18
+        self.fc_cls = Classifier()  # TODO: bias need to be specified as -4.18
 
     def forward(self, *args, **kwargs) -> Tuple[torch.Tensor, torch.Tensor]:
         class_embeddings = self._seen_class_embeddings if self.training else self._all_class_embeddings

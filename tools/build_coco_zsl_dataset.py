@@ -7,7 +7,7 @@ from typing import Tuple
 from mmcv import Config
 
 from denseclip.utils import odps_init
-from denseclip.coco import CocoZSLSeenDataset, CocoZSLUnseenDataset, CocoGZSLDataset
+from denseclip.datasets.coco import CocoZSLSeenDataset, CocoZSLUnseenDataset, CocoGZSLDataset
 
 
 def parse_args():
@@ -31,11 +31,14 @@ def split_dataset(ann_file: str, split: Tuple[str], name: str):
     print("#annotations:", len(data['annotations']))
 
     seen_image_ids = set([anno['image_id'] for anno in data['annotations']])
+    data['deleted_images'] = [i for i, image in enumerate(data['images']) if image['id'] not in seen_image_ids]
+    print("#deleted_images:", len(data['deleted_images']))
+
     data['images'] = [image for image in data['images'] if image['id'] in seen_image_ids]
     print("#images:", len(data['images']))
 
     ann_file_name, ext = osp.splitext(ann_file)
-    seen_ann_file = f'{ann_file_name}_{name}{ext}'
+    seen_ann_file = f'{ann_file_name}_{name}_1{ext}'
     print("Saving to", seen_ann_file)
     with open(seen_ann_file, 'w') as f:
         json.dump(data, f)

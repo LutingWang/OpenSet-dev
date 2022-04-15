@@ -2,91 +2,115 @@
 
 ```shell
 cd
-git clone git@gitlab.alibaba-inc.com:wangluting.wlt/openset_detection.git
+git clone git@github.com:openai/CLIP.git
 git clone git@github.com:open-mmlab/mmdetection.git
-git clone git@github.com:LutingWang/todd.git
+GIT_LFS_SKIP_SMUDGE=1 git clone git@github.com:LutingWang/todd.git
 
+git clone git@gitlab.alibaba-inc.com:wangluting.wlt/openset_detection.git
 cd openset_detection
+ln -s ${HOME}/CLIP/clip .
 ln -s ${HOME}/mmdetection/mmdet .
 ln -s ${HOME}/todd/todd .
-ln -s ${HOME}/.cache/clip
+ln -s ${HOME}/.cache/clip pretrained/clip
+ln -s ${HOME}/.cache/torch/hub/checkpoints/ pretrained/torchvision
 ```
 
 # Data Preparation
 
-`data` directory structure
-
-```
-DenseCLIP/data
-└── coco
-    ├── annotations
-    │   ├── instances_train2017.json
-    │   └── instances_val2017.json
-    ├── train2017
-    │   └── *.jpg
-    └── val2017
-        └── *.jpg
-```
-
-Generate GSL annotations
+## Generate GZSL annotations
 
 ```shell
-python tools/build_coco_zsl_dataset.py configs/_base_/datasets/coco_detection_clip.py --split 48_17
-'''Outputs:
-split: 48_17
-
+$ python tools/build_coco_zsl_dataset.py configs/_base_/datasets/coco_detection.py
+[B-R182Q6LT-0100:13909][2022-04-14 14:18:46.673][utils.py:47]DEBUG: ODPS initializing.
+[B-R182Q6LT-0100:13909][2022-04-14 14:18:46.673][utils.py:63]DEBUG: ODPS initialization done with ['todd', 'tools', '.DS_Store', 'LICENSE', 'requirements.txt', 'clip', 'work_dirs', 'README.md', 'Pipfile', '.gitignore', 'configs', 'local_data', '.git', 'denseclip', 'data', 'Pipfile.lock', 'pretrained', 'mmdet'].
 Splitting training dataset
+#categories: 48
 #annotations: 665387
+#deleted_images: 10526
 #images: 107761
-Saving to data/coco/annotations/instances_train2017_48_17.json
+Saving to data/coco/annotations/instances_train2017_48_17_1.json
 
 Splitting validation dataset
+#categories: 65
 #annotations: 33152
+#deleted_images: 164
 #images: 4836
-Saving to data/coco/annotations/instances_val2017_48_17.json
-'''
-python tools/build_coco_zsl_dataset.py configs/_base_/datasets/coco_detection_clip.py --split 65_15
-'''Outputs:
-split: 65_15
-
-Splitting training dataset
-#annotations: 811777
-#images: 111338
-Saving to data/coco/annotations/instances_train2017_65_15.json
-
-Splitting validation dataset
-#annotations: 36781
-#images: 4952
-Saving to data/coco/annotations/instances_val2017_65_15.json
-'''
+Saving to data/coco/annotations/instances_val2017_48_17_1.json
 ```
+
+## Generate Proposals
+
+```shell
+sh tools/odps_test.sh configs/rpn/rpn_r101_fpn_1x_coco_train.py data/ckpts/rpn_r101_fpn_2x_coco_20200131-24e3db1a.pth 8 --out data/coco/proposals/rpn_r101_fpn_coco_train_48_17.pkl
+sh tools/odps_test.sh configs/rpn/rpn_r101_fpn_1x_coco_val.py data/ckpts/rpn_r101_fpn_2x_coco_20200131-24e3db1a.pth 8 --out data/coco/proposals/rpn_r101_fpn_coco_val_48_17.pkl
+```
+
+## Generate Class Embeddings
+
+```shell
+# for coco
+python tools/class_embeddings.py vild
+
+# for lvis
+python tools/class_embeddings.py vild --dataset lvis_v1
+python tools/class_embeddings.py vild --dataset lvis_v1 --pretrained "ViT-B/32"
+```
+
+## Directory Tree
+
+Before
 
 ```
 DenseCLIP/data
-└── coco
+├── coco
+│   ├── annotations
+│   │   ├── instances_train2017.json
+│   │   └── instances_val2017.json
+│   ├── train2017
+│   │   └── *.jpg
+│   └── val2017
+│       └── *.jpg
+└── lvis_v1
     ├── annotations
-    │   ├── instances_train2017.json
-    │   ├── instances_train2017_48_17.json
-    │   ├── instances_train2017_65_15.json
-    │   ├── instances_val2017.json
-    │   ├── instances_val2017_48_17.json
-    │   └── instances_val2017_65_15.json
-    ├── train2017
-    │   └── *.jpg
-    └── val2017
-        └── *.jpg
+    │   ├── lvis_v1_train.json
+    │   └── lvis_v1_val.json
+    ├── train2017 -> coco/train2017
+    └── val2017 -> coco/val2017
 ```
 
-# Proposals
+After
 
-```shell
-sh tools/odps_test.sh configs/rpn/rpn_r101_fpn_1x_coco_train.py data/ckpts/rpn_r101_fpn_2x_coco_20200131-24e3db1a.pth 8 --out data/proposals/rpn_r101_fpn_coco_train.pkl
-sh tools/odps_test.sh configs/rpn/rpn_r101_fpn_1x_coco_val.py data/ckpts/rpn_r101_fpn_2x_coco_20200131-24e3db1a.pth 8 --out data/proposals/rpn_r101_fpn_coco_test.pkl
+```
+DenseCLIP/data
+├── coco
+│   ├── annotations
+│   │   ├── instances_train2017.json (~118k)
+│   │   ├── instances_train2017_48_17_1.json (~118k - 10526 = 107761)
+│   │   ├── instances_val2017.json (5k)
+│   │   └── instances_val2017_48_17_1.json (5k - 164 = 4836)
+│   ├── prompt
+│   │   └── vild.pth
+│   ├── proposals
+│   │   ├── rpn_r101_fpn_coco_train.pkl (~118k)
+│   │   └── rpn_r101_fpn_coco_val.pkl (5k)
+│   ├── train2017
+│   │   └── *.jpg
+│   └── val2017
+│       └── *.jpg
+└── lvis_v1
+    ├── annotations
+    │   ├── lvis_v1_train.json
+    │   └── lvis_v1_val.json
+    ├── proposals
+    │   ├── rpn_r101_fpn_lvis_train.pkl (~118k)
+    │   └── rpn_r101_fpn_lvis_val.pkl (5k)
+    ├── train2017 -> coco/train2017
+    └── val2017 -> coco/val2017
 ```
 
 # Extract features
 
-For proposals
+For proposals (*needs refinement and check, may have bug of dataset split mismatch*)
 
 ```shell
 sh tools/odps_train.sh debug configs/feature_extractor/clip_proposal_feature_extractor.py 8 --seed 3407 --cfg-options log_config.interval=1
@@ -94,16 +118,10 @@ sh tools/odps_train.sh debug configs/feature_extractor/clip_proposal_feature_ext
 sh tools/odps_train.sh prompt1 configs/prompt/prompt.py 1 --seed 3407
 ```
 
-# ViLD class embeddings
-
-```shell
-python tools/class_embeddings.py vild
-```
-
 # Resources
 
 Under `oss://mvap-data/zhax/wangluting/`
 
 - mmdetection/CLIP pretrained model checkpoints
-- coco dataset (with ZSL annotations)
+- coco dataset (with GZSL annotations)
 - mmcv wheels

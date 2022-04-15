@@ -34,6 +34,7 @@ test_pipeline = [
         ])
 ]
 data = dict(
+    samples_per_gpu=4,
     train=dict(
         proposal_file=data_root + 'proposals/rpn_r101_fpn_coco_train.pkl',
         pipeline=train_pipeline,
@@ -52,8 +53,9 @@ model = dict(
     roi_head=dict(
         bbox_head=dict(
             type='Shared2FCBBoxHeadZSL',
-            class_embeddings='data/coco/prompt/vild_CocoDataset.pth',
+            class_embeddings='data/coco/prompt/vild.pth',
             num_classes=48,
-        )
-    )
+            reg_class_agnostic=True,
+        ),
+    ),
 )

@@ -8,15 +8,15 @@ data = dict(
     # workers_per_gpu=6,
     train=dict(
         type='CocoZSLSeenDataset',
-        ann_file=data_root + 'annotations/instances_train2017_48_17_.json',
+        ann_file=data_root + 'annotations/instances_train2017_48_17_1.json',
         lmdb_file='local_data/embeddings6.lmdb',
     ),
     val=dict(
         type='CocoGZSLDataset',
-        ann_file=data_root + 'annotations/instances_val2017_48_17_.json',
+        ann_file=data_root + 'annotations/instances_val2017_48_17_1.json',
     ),
     test=dict(
         type='CocoGZSLDataset',
-        ann_file=data_root + 'annotations/instances_val2017_48_17_.json',
+        ann_file=data_root + 'annotations/instances_val2017_48_17_1.json',
     ),
 )
