@@ -3,12 +3,14 @@
 ```shell
 cd
 git clone git@github.com:openai/CLIP.git
+git clone git@github.com:lvis-dataset/lvis-api.git
 git clone git@github.com:open-mmlab/mmdetection.git
 GIT_LFS_SKIP_SMUDGE=1 git clone git@github.com:LutingWang/todd.git
 
 git clone git@gitlab.alibaba-inc.com:wangluting.wlt/openset_detection.git
 cd openset_detection
 ln -s ${HOME}/CLIP/clip .
+ln -s ${HOME}/lvis-api/lvis .
 ln -s ${HOME}/mmdetection/mmdet .
 ln -s ${HOME}/todd/todd .
 ln -s ${HOME}/.cache/clip pretrained/clip
@@ -20,9 +22,7 @@ ln -s ${HOME}/.cache/torch/hub/checkpoints/ pretrained/torchvision
 ## Generate GZSL annotations
 
 ```shell
-$ python tools/build_coco_zsl_dataset.py configs/_base_/datasets/coco_detection.py
-[B-R182Q6LT-0100:13909][2022-04-14 14:18:46.673][utils.py:47]DEBUG: ODPS initializing.
-[B-R182Q6LT-0100:13909][2022-04-14 14:18:46.673][utils.py:63]DEBUG: ODPS initialization done with ['todd', 'tools', '.DS_Store', 'LICENSE', 'requirements.txt', 'clip', 'work_dirs', 'README.md', 'Pipfile', '.gitignore', 'configs', 'local_data', '.git', 'denseclip', 'data', 'Pipfile.lock', 'pretrained', 'mmdet'].
+$ python tools/build_zsl_dataset.py configs/_base_/datasets/coco_detection.py
 Splitting training dataset
 #categories: 48
 #annotations: 665387
@@ -36,6 +36,16 @@ Splitting validation dataset
 #deleted_images: 164
 #images: 4836
 Saving to data/coco/annotations/instances_val2017_48_17_1.json
+
+$ python tools/build_zsl_dataset.py configs/_base_/datasets/lvis_v1_detection.py
+Splitting training dataset
+#categories: 866
+#annotations: 1264884
+#deleted_images: 828
+#images: 99342
+Saving to data/lvis_v1/annotations/lvis_v1_train_seen_1.json
+
+Splitting validation dataset
 ```
 
 ## Generate Proposals
@@ -54,6 +64,12 @@ python tools/class_embeddings.py vild
 # for lvis
 python tools/class_embeddings.py vild --dataset lvis_v1
 python tools/class_embeddings.py vild --dataset lvis_v1 --pretrained "ViT-B/32"
+```
+
+## Generate Proposal Embeddings
+
+```shell
+sh tools/odps_train.sh debug configs/feature_extractor/clip_feature_extractor.py 8 --seed 3407 --cfg-options log_config.interval=4
 ```
 
 ## Directory Tree

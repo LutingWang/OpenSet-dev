@@ -1,16 +1,17 @@
 import contextlib
 import io
 import logging
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Optional, Tuple
 
 import numpy as np
-import torch
-from denseclip.utils import has_debug_flag
-from mmcv.parallel import DataContainer as DC
 from mmcv.utils import print_log
 from mmdet.datasets import CocoDataset, DATASETS
 from mmdet.datasets.api_wrappers import COCOeval
-from todd.datasets import LmdbDataset
+from mmdet.datasets.lvis import LVISV1Dataset
+
+from ..utils import has_debug_flag
+
+from .zsl import ZSLDataset
 
 
 SEEN_65_15 = [
@@ -39,53 +40,16 @@ INDEX_UNSEEN_48_17 = [i for i, c in enumerate(ALL_48_17) if c in UNSEEN_48_17]
 
 
 @DATASETS.register_module()
-class CocoZSLDataset(CocoDataset):
-    def __len__(self):
-        if has_debug_flag(2):
-            return 10
-        return super().__len__()
-
-    def load_proposals(self, proposal_file: str) -> List[torch.Tensor]:
-        proposals = super().load_proposals(proposal_file)
-        if 'deleted_images' in self.coco.dataset:
-            deleted_images = self.coco.dataset['deleted_images']
-            proposals = [p[:, :4] for i, p in enumerate(proposals) if i not in deleted_images]
-            assert len(proposals) == len(self.data_infos)  # len(self) is set manually when debugging
-        return proposals
-
-    def pre_pipeline(self, results: Dict[str, Any]):
-        super().pre_pipeline(results)
-        if self.proposals is not None:
-            results['bbox_fields'].append('proposals')
-
-    def evaluate(self, *args, gpu_collect: bool = False, **kwargs) -> Any:
-        return super().evaluate(*args, **kwargs)
-
-
-@DATASETS.register_module()
-class CocoZSLSeenDataset(CocoZSLDataset):
+class CocoZSLSeenDataset(ZSLDataset, CocoDataset):
     CLASSES, PALETTE = zip(*[
         (CocoDataset.CLASSES[i], CocoDataset.PALETTE[i]) 
         for i in SEEN_48_17
     ])
     PALETTE = list(PALETTE)
 
-    def __init__(self, *args, lmdb_file: Optional[str] = None, **kwargs):
-        super().__init__(*args, **kwargs)
-        self._lmdb = None if lmdb_file is None else LmdbDataset(filepath=lmdb_file, db='train')
-
-    def prepare_train_img(self, idx: int) -> dict:
-        results = super().prepare_train_img(idx)
-        if self._lmdb is not None:
-            img_id = self.data_infos[idx]['id']
-            bboxes, bbox_embeddings = self._lmdb[img_id]
-            results['bboxes'] = DC(bboxes)
-            results['bbox_embeddings'] = DC(bbox_embeddings)
-        return results
-
 
 @DATASETS.register_module()
-class CocoZSLUnseenDataset(CocoZSLDataset):
+class CocoZSLUnseenDataset(ZSLDataset, CocoDataset):
     CLASSES, PALETTE = zip(*[
         (CocoDataset.CLASSES[i], CocoDataset.PALETTE[i]) 
         for i in UNSEEN_48_17
@@ -94,7 +58,7 @@ class CocoZSLUnseenDataset(CocoZSLDataset):
 
 
 @DATASETS.register_module()
-class CocoGZSLDataset(CocoZSLDataset):
+class CocoGZSLDataset(ZSLDataset, CocoDataset):
     CLASSES, PALETTE = zip(*[
         (CocoDataset.CLASSES[i], CocoDataset.PALETTE[i]) 
         for i in ALL_48_17
@@ -142,9 +106,6 @@ class CocoGZSLDataset(CocoZSLDataset):
         if max_dets is not None:
             cocoEval.params.maxDets = list(max_dets)
 
-        if has_debug_flag(2):
-            cocoEval.params.imgIds = cocoEval.params.imgIds[:len(self)]
-
         cocoEval.evaluate()
         cocoEval.accumulate()
 
@@ -162,7 +123,16 @@ class CocoGZSLDataset(CocoZSLDataset):
         return eval_results
 
 
-@DATASETS.register_module()
-class CocoFeatureExtractionDataset(CocoZSLDataset):
+class FeatureExtractionDataset(ZSLDataset):
     def prepare_test_img(self, idx):
         return self.prepare_train_img(idx)
+
+
+@DATASETS.register_module()
+class CocoFeatureExtractionDataset(FeatureExtractionDataset, CocoDataset):
+    pass
+
+
+@DATASETS.register_module()
+class LVISV1FeatureExtractionDataset(FeatureExtractionDataset, LVISV1Dataset):
+    pass

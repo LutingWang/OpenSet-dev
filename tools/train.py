@@ -17,7 +17,7 @@ from mmdet.datasets import build_dataset
 from mmdet.models import build_detector
 from mmdet.utils import collect_env, get_root_logger, setup_multi_processes
 
-from denseclip.utils import has_debug_flag, odps_init
+from denseclip.utils import debug_init, has_debug_flag, odps_init
 
 
 def parse_args():
@@ -104,23 +104,14 @@ def main():
     if args.cfg_options is not None:
         cfg.merge_from_dict(args.cfg_options)
 
+    debug_init(args.debug, cfg)
+
     # set multi-process settings
     setup_multi_processes(cfg)
 
     # set cudnn_benchmark
     if cfg.get('cudnn_benchmark', False):
         torch.backends.cudnn.benchmark = True
-
-    if args.debug:
-        # os.environ['CUDA_LAUNCH_BLOCKING'] = '1'
-        os.environ['DEBUG'] = '011'
-    if has_debug_flag(1):
-        if 'ann_file' in cfg.data.val:
-            cfg.data.train.ann_file = cfg.data.val.ann_file
-        if 'img_prefix' in cfg.data.val:
-            cfg.data.train.img_prefix = cfg.data.val.img_prefix
-        if 'proposal_file' in cfg.data.val:
-            cfg.data.train.proposal_file = cfg.data.val.proposal_file
 
     # work_dir is determined in this priority: CLI > segment in file > filename
     if args.work_dir is not None:

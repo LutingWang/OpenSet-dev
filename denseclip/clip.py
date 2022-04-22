@@ -1,51 +1,33 @@
-import io
 import os
-import random
-from typing import Any, Dict, Iterable, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
+import einops
 
 import clip
 import clip.model
-import lmdb
 import numpy as np
-import todd
+import todd.datasets
+import todd.utils
 import torch
+import torch.nn as nn
 import torch.nn.functional as F
-from denseclip.utils import encode_bboxes, has_debug_flag
 from mmcv.runner import BaseRunner, HOOKS, Hook, get_dist_info
 from mmcv.parallel import MMDataParallel, MMDistributedDataParallel
-from mmdet.core import AssignResult, MaxIoUAssigner
 from mmdet.models import DETECTORS, BaseDetector
+from todd.utils.criterions import BinaryAccuracy
 
-from .coco import CocoGZSLDataset
-
-
-class Evaluator:
-    def __init__(self) -> None:
-        self._total = 0
-        self._correct = 0
-
-    def add(self, result: torch.Tensor):
-        self._total += result.numel()
-        self._correct += result.sum()
-
-    def report(self):
-        print("total:", self._total)
-        print("correct:", self._correct)
-        print("acc:", self._correct / self._total)
+from .datasets import CocoGZSLDataset
+from .utils import encode_bboxes
 
 
 class CLIPBaseDetector(BaseDetector):
     CLASSES: Tuple[str]
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, pretrained: str = 'pretrained/clip/RN50.pt', **kwargs):
         super().__init__()
-        model, preprocess = clip.load('pretrained/RN50.pt')
-        # todd.utils.freeze_model(model)
-        model.eval()
-        preprocess.transforms = preprocess.transforms[:2]
-        self._model: clip.model.CLIP = model
-        self._preprocess = preprocess
+        model, _ = clip.load(pretrained)
+        self._model: clip.model.CLIP = todd.utils.freeze_model(model)
+        self._loss = nn.Parameter(torch.zeros([]), requires_grad=True)
 
     def train(self, mode: bool = False):
         super().train(False)
@@ -55,8 +37,20 @@ class CLIPBaseDetector(BaseDetector):
     def device(self):
         return self._model.visual.conv1.weight.device
 
-    def extract_feat(self):
-        pass
+    @torch.no_grad()
+    def extract_feat(self, img: List[torch.Tensor]) -> List[torch.Tensor]:
+        batch_sizes = [img_.shape[0] for img_ in img]
+        imgs = torch.cat(img)
+        if imgs.shape[0] == 0:
+            return [
+                imgs.new_zeros(0, self._model.visual.output_dim) 
+                for _ in range(len(img))
+            ]
+        imgs: torch.Tensor = self._model.encode_image(imgs)
+        return [F.normalize(
+            einops.reduce(crops, '(n b) d -> b d', n=2, reduction='sum'), 
+            dim=-1,
+        ) for crops in imgs.split(batch_sizes)]
 
     def simple_test(self):
         pass
@@ -64,171 +58,51 @@ class CLIPBaseDetector(BaseDetector):
     def aug_test(self):
         pass
 
-    def forward_train(
-        self,
-        img: torch.Tensor,
-        bboxes: List[torch.Tensor],
-    ) -> Tuple[List[torch.Tensor], Dict[str, torch.Tensor]]:
-        # if has_debug_flag(3):
-        #     gt_bboxes = [gt_bbox[:2] for gt_bbox in gt_bboxes]
-        crops = [
-            encode_bboxes(self._model, self._preprocess, img_, bbox)
-            for img_, bbox in zip(img, bboxes)
-        ]
-        losses = dict(loss_zero=img.new_zeros([], requires_grad=True))
-        return crops, losses
+    def forward_train(self) -> Dict[str, torch.Tensor]:
+        return dict(loss_zero=self._loss * 0)
 
-    def forward_test(self, img: torch.Tensor):
+    def forward_test(self, batch_size: int):
         bbox_results = [[
             np.zeros((0, 5), dtype=np.float32)
-        ] * len(self.CLASSES)] * img.shape[0]
+        ] * len(self.CLASSES)] * batch_size
         return bbox_results
-
-
-@HOOKS.register_module()
-class SaveLmdbToOSS(Hook):
-    def __init__(self, lmdb_filepath: str):
-        super().__init__()
-        self._lmdb_filepath = lmdb_filepath
-
-    def after_train_epoch(self, runner: BaseRunner):
-        super().after_val_epoch(runner)
-        rank, _ = get_dist_info()
-        lmdb_filepath = os.path.join(self._lmdb_filepath, f'worker{rank}')
-        os.makedirs(lmdb_filepath)
-
-        model: Union[MMDataParallel, MMDistributedDataParallel] = runner.model
-        module: CLIPFeatureExtractor = model.module
-        module._env.copy(lmdb_filepath)
 
 
 @DETECTORS.register_module()
 class CLIPFeatureExtractor(CLIPBaseDetector):
-    def __init__(self, *args, lmdb_filepath: str, **kwargs):
+    def __init__(self, *args, data_root: str, **kwargs):
         super().__init__(*args, **kwargs)
-        rank, _ = get_dist_info()
-        self._lmdb_filepath = lmdb_filepath
-        if not os.path.exists(self._lmdb_filepath):
-            os.makedirs(self._lmdb_filepath)
-        self._env: lmdb.Environment = lmdb.open(
-            os.path.join(self._lmdb_filepath, f'worker{rank}'), 
-            map_size=10 * 2 ** 30,  # 10 GB
-            readonly=False, 
-            max_dbs=2,
-        )
+        self._train_writer = todd.datasets.PthAccessLayer(data_root=data_root, task_name='train', exist_ok=True)
+        self._val_writer = todd.datasets.PthAccessLayer(data_root=data_root, task_name='val', exist_ok=True)
 
-    def _write_db(
+    @property
+    def writer(self) -> todd.datasets.PthAccessLayer:
+        return self._train_writer if self.training else self._val_writer
+
+    def extract_feat(
         self, 
-        db: lmdb._Database, 
+        img: torch.Tensor,
         img_metas: List[dict], 
-        data: Iterable[Any],
+        bboxes: List[torch.Tensor],
+        training: bool = True,
+        *args, **kwargs,
     ):
-        img_ids = [
-            str(img_meta['img_info']['id']).encode() 
-            for img_meta in img_metas
-        ]
-        with self._env.begin(db, write=True) as txn:
-            for img_id, datum in zip(img_ids, data):
-                buffer = io.BytesIO()
-                torch.save(datum, buffer)
-                txn.put(img_id, buffer.getvalue())
+        writer = self._train_writer if training else self._val_writer
+        crops = super().extract_feat(img)
+        for img_meta, value in zip(img_metas, zip(bboxes, crops)):
+            writer[img_meta['id']] = value
 
-
-@DETECTORS.register_module()
-class CLIPProposalFeatureExtractor(CLIPFeatureExtractor):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self._assigner = MaxIoUAssigner(
-            pos_iou_thr=0.5,
-            neg_iou_thr=(0.1, 0.5),
-            min_pos_iou=0.5,
-        )
-        self._train_db: lmdb._Database = self._env.open_db('train'.encode(), create=True)
-        self._val_db: lmdb._Database = self._env.open_db('val'.encode(), create=True)
-
-    def assign(
-        self, 
-        proposals: torch.Tensor, 
-        gt_bboxes: torch.Tensor, 
-        gt_labels: torch.Tensor,
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        assign_result: AssignResult = self._assigner.assign(proposals, gt_bboxes, None, gt_labels)
-        pos_inds, = torch.where(assign_result.gt_inds > 0)
-        neg_inds, = torch.where(assign_result.gt_inds == 0)
-        neg_inds = random.sample(neg_inds.tolist(), neg_inds.numel() // 10)
-        neg_inds = pos_inds.new_tensor(neg_inds)
-        inds = torch.cat([pos_inds, neg_inds])
-        return proposals[inds], assign_result.max_overlaps[inds], assign_result.labels[inds]
-
-    def forward_train(
-        self,
-        img: torch.Tensor,
-        img_metas: List[dict],
-        gt_bboxes: List[torch.Tensor],
-        gt_labels: List[torch.Tensor],
-        gt_bboxes_ignore: Optional[List[torch.Tensor]] = None,
-        proposals: Optional[torch.Tensor] = None,
-        *args, **kwargs,
-    ) -> Dict[str, Any]:
-        max_overlaps = labels = [None] * len(proposals)
-        for i, data in enumerate(zip(proposals, gt_bboxes, gt_labels)):
-            proposals[i], max_overlaps[i], labels[i] = self.assign(*data)
-            
-        crops, losses = super().forward_train(img, proposals)
-        self._write_db(self._train_db, img_metas, zip(proposals, crops, max_overlaps, labels))
-        return losses
+    def forward_train(self, *args, **kwargs) -> Dict[str, Any]:
+        self.extract_feat(*args, training=True, **kwargs)
+        return super().forward_train()
 
     def forward_test(
         self,
-        img: torch.Tensor,
-        img_metas: List[dict],
-        gt_bboxes: List[torch.Tensor],
-        gt_labels: List[torch.Tensor],
-        gt_bboxes_ignore: Optional[List[torch.Tensor]] = None,
-        proposals: Optional[torch.Tensor] = None,
+        img: List[torch.Tensor],
         *args, **kwargs,
     ) -> Dict[str, Any]:
-        max_overlaps = labels = [None] * len(proposals)
-        for i, data in enumerate(zip(proposals, gt_bboxes, gt_labels)):
-            proposals[i], max_overlaps[i], labels[i] = self.assign(*data)
-
-        crops, _ = super().forward_train(img, proposals)
-        self._write_db(self._val_db, img_metas, zip(proposals, crops, max_overlaps, labels))
-        return super().forward_test(img)
-
-
-@DETECTORS.register_module()
-class CLIPGTFeatureExtractor(CLIPFeatureExtractor):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self._train_db: lmdb._Database = self._env.open_db('train'.encode(), create=True)
-        self._val_db: lmdb._Database = self._env.open_db('val'.encode(), create=True)
-
-    def forward_train(
-        self,
-        img: torch.Tensor,
-        img_metas: List[dict],
-        gt_bboxes: List[torch.Tensor],
-        gt_labels: List[torch.Tensor],
-        gt_bboxes_ignore: Optional[List[torch.Tensor]] = None,
-        *args, **kwargs,
-    ) -> Dict[str, Any]:
-        crops, losses = super().forward_train(img, gt_bboxes)
-        self._write_db(self._train_db, img_metas, zip(gt_bboxes, crops))
-        return losses
-
-    def forward_test(
-        self,
-        img: torch.Tensor,
-        img_metas: List[dict],
-        gt_bboxes: List[torch.Tensor],
-        gt_labels: List[torch.Tensor],
-        gt_bboxes_ignore: Optional[List[torch.Tensor]] = None,
-        *args, **kwargs,
-    ) -> Dict[str, Any]:
-        crops, _ = super().forward_train(img, gt_bboxes)
-        self._write_db(self._val_db, img_metas, zip(gt_bboxes, crops))
-        return super().forward_test(img)
+        self.extract_feat(img, *args, training=False, **kwargs)
+        return super().forward_test(batch_size=len(img))
 
 
 @DETECTORS.register_module()
@@ -266,3 +140,20 @@ class CLIPDetector(CLIPBaseDetector):
 
     def forward_test(self, img: torch.Tensor, *args, **kwargs):
         pass
+
+
+@HOOKS.register_module()
+class SaveLmdbToOSS(Hook):
+    def __init__(self, lmdb_filepath: str):
+        super().__init__()
+        self._lmdb_filepath = lmdb_filepath
+
+    def after_train_epoch(self, runner: BaseRunner):
+        super().after_val_epoch(runner)
+        rank, _ = get_dist_info()
+        lmdb_filepath = os.path.join(self._lmdb_filepath, f'worker{rank}')
+        os.makedirs(lmdb_filepath)
+
+        model: Union[MMDataParallel, MMDistributedDataParallel] = runner.model
+        module: CLIPFeatureExtractor = model.module
+        module._env.copy(lmdb_filepath)

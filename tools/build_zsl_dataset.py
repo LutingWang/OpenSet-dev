@@ -6,8 +6,8 @@ from typing import Tuple
 
 from mmcv import Config
 
+from denseclip.datasets import CocoZSLSeenDataset, CocoGZSLDataset, LVISV1GZSLDataset, LVISV1ZSLSeenDataset
 from denseclip.utils import odps_init
-from denseclip.datasets.coco import CocoZSLSeenDataset, CocoZSLUnseenDataset, CocoGZSLDataset
 
 
 def parse_args():
@@ -44,15 +44,37 @@ def split_dataset(ann_file: str, split: Tuple[str], name: str):
         json.dump(data, f)
 
 
+def get_dataset_cfg(dataset_cfg: Config) -> Config:
+    dataset_type = dataset_cfg.type
+    if dataset_type == 'ClassBalancedDataset':
+        dataset_cfg = dataset_cfg.dataset
+    return dataset_cfg
+
+
 def main():
     args = parse_args()
     cfg = Config.fromfile(args.config)
 
     print("Splitting training dataset")
-    split_dataset(cfg.data.train.ann_file, CocoZSLSeenDataset.CLASSES, '48_17')
+    train_cfg = get_dataset_cfg(cfg.data.train)
+    dataset_type = train_cfg.type
+    if dataset_type == 'CocoDataset':
+        split_dataset(train_cfg.ann_file, CocoZSLSeenDataset.CLASSES, '48_17')
+    elif dataset_type == 'LVISV1Dataset':
+        split_dataset(train_cfg.ann_file, LVISV1ZSLSeenDataset.CLASSES, 'seen')
+    else:
+        raise ValueError(f"Unknown dataset type: {dataset_type}")
     print()
     print("Splitting validation dataset")
-    split_dataset(cfg.data.val.ann_file, CocoGZSLDataset.CLASSES, '48_17')
+    val_cfg = get_dataset_cfg(cfg.data.val)
+    dataset_type = val_cfg.type
+    if dataset_type == 'CocoDataset':
+        split_dataset(val_cfg.ann_file, CocoGZSLDataset.CLASSES, '48_17')
+    elif dataset_type == 'LVISV1Dataset':
+        # split_dataset(val_cfg.ann_file, LVISV1GZSLDataset.CLASSES, 'unseen')
+        print("Passed for lvis v1 dataset.")
+    else:
+        raise ValueError(f"Unknown dataset type: {dataset_type}")
 
 
 if __name__ == '__main__':

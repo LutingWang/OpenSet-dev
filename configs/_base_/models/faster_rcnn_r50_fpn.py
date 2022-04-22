@@ -7,14 +7,16 @@ model = dict(
         num_stages=4,
         out_indices=(0, 1, 2, 3),
         frozen_stages=1,
-        norm_cfg=dict(type='BN', requires_grad=True),
+        norm_cfg=dict(type='SyncBN', requires_grad=True),
         norm_eval=True,
-        style='pytorch',
-        init_cfg=dict(type='Pretrained', checkpoint='pretrained/torchvision/resnet50-0676ba61.pth')),
+        style='caffe',
+        init_cfg=[],
+    ),
     neck=dict(
         type='FPN',
         in_channels=[256, 512, 1024, 2048],
         out_channels=256,
+        norm_cfg=dict(type='SyncBN', requires_grad=True),
         num_outs=5),
     rpn_head=dict(
         type='RPNHead',
@@ -45,11 +47,12 @@ model = dict(
             fc_out_channels=1024,
             roi_feat_size=7,
             num_classes=80,
+            norm_cfg=dict(type='SyncBN', requires_grad=True),
             bbox_coder=dict(
                 type='DeltaXYWHBBoxCoder',
                 target_means=[0., 0., 0., 0.],
                 target_stds=[0.1, 0.1, 0.2, 0.2]),
-            reg_class_agnostic=False,
+            reg_class_agnostic=True,
             loss_cls=dict(
                 type='CrossEntropyLoss', use_sigmoid=False, loss_weight=1.0),
             loss_bbox=dict(type='L1Loss', loss_weight=1.0))),

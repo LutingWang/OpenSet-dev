@@ -4,8 +4,6 @@ _base_ = [
 
 data_root = 'data/coco/'
 data = dict(
-    # samples_per_gpu=2,
-    # workers_per_gpu=6,
     train=dict(
         type='CocoZSLSeenDataset',
         ann_file=data_root + 'annotations/instances_train2017_48_17_1.json',

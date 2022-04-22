@@ -19,7 +19,7 @@ from mmdet.datasets import (build_dataloader, build_dataset,
 from mmdet.models import build_detector
 from mmdet.utils import setup_multi_processes
 
-from denseclip.utils import odps_init
+from denseclip.utils import debug_init, odps_init
 
 
 def parse_args():
@@ -122,8 +122,6 @@ def parse_args():
 
 def main():
     args = parse_args()
-    if args.debug:
-        os.environ['DEBUG'] = '011'
 
     assert args.out or args.eval or args.format_only or args.show \
         or args.show_dir, \
@@ -140,6 +138,8 @@ def main():
     cfg = Config.fromfile(args.config)
     if args.cfg_options is not None:
         cfg.merge_from_dict(args.cfg_options)
+
+    debug_init(args.debug, cfg)
 
     # set multi-process settings
     setup_multi_processes(cfg)

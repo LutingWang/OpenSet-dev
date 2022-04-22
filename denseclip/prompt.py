@@ -156,13 +156,19 @@ class CLIPDistiller(todd.distillers.SingleTeacherDistiller):
 
 
 class Classifier(nn.Module):
-    def __init__(self, tau: float = 0.07, bias: Optional[float] = None):
+    def __init__(self, tau: Tuple[float, float] = (0.07, 0.07), bias: Optional[float] = None):
         super().__init__()
+        if isinstance(tau, float):
+            tau = (tau, tau)
         self._tau = tau
         self._bias = (
             None if bias is None else 
             nn.Parameter(torch.FloatTensor(data=[bias]))
         )
+
+    @property
+    def tau(self) -> float:
+        return self._tau[self.training]
 
     def set_weight(self, weight: Optional[torch.Tensor], norm: bool = True):
         if weight is None:
@@ -178,7 +184,9 @@ class Classifier(nn.Module):
 
     def forward(self, x: torch.Tensor, norm: bool = True) -> torch.Tensor:
         if norm:
-            x = F.normalize(x, dim=1)
+            x = F.normalize(x)
+        if self._weight is None:
+            return x
         if x.ndim == 2:
             input_pattern = 'b c'
             output_pattern = 'b k'
@@ -193,7 +201,7 @@ class Classifier(nn.Module):
             f'{input_pattern}, {weight_pattern} -> {output_pattern}', 
             x, self._weight,
         )
-        x = x / self._tau
+        x = x / self.tau
         if self._bias is not None:
             x = x + self._bias
         return x

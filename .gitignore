@@ -8,5 +8,6 @@ mmdet
 todd
 work_dirs
 clip
+lvis
 pretrained/*
 !pretrained/.gitkeep

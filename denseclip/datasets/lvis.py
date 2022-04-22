@@ -1,4 +1,10 @@
-SEEN = [
+from typing import Iterable, List, Tuple
+from mmdet.datasets import LVISV1Dataset, DATASETS
+
+from .zsl import ZSLDataset
+
+
+V1_SEEN = [  # 866 classes
        0,    1,    2,    3,    4,    5,    6,    7,    8,    9, 
       10,   11,   14,   15,   17,   18,   21,   22,   23,   24, 
       25,   26,   27,   28,   31,   32,   33,   34,   35,   36, 
@@ -87,7 +93,7 @@ SEEN = [
     1186, 1187, 1188, 1189, 1190, 1191, 1193, 1194, 1195, 1196, 
     1197, 1198, 1199, 1200, 1201, 1202,
 ]
-UNSEEN = [
+V1_UNSEEN = [  # 337 classes
       12,   13,   16,   19,   20,   29,   30,   37,   38,   39, 
       41,   48,   50,   51,   62,   68,   70,   77,   81,   84, 
       92,  104,  105,  112,  116,  118,  122,  125,  129,  130,  
@@ -123,3 +129,27 @@ UNSEEN = [
     1117, 1118, 1123, 1125, 1128, 1134, 1143, 1144, 1145, 1147, 
     1149, 1156, 1157, 1158, 1164, 1166, 1192,
 ]
+
+
+def correct_classes(classes: Iterable[str]) -> Tuple[str]:
+    correct_classes = []
+    for class_ in classes:
+        if class_ == 'speaker_(stereo_equipment)':
+            class_ = 'speaker_(stero_equipment)'
+        correct_classes.append(class_)
+    return tuple(correct_classes)
+
+
+@DATASETS.register_module()
+class LVISV1ZSLSeenDataset(ZSLDataset, LVISV1Dataset):
+    CLASSES = correct_classes(LVISV1Dataset.CLASSES[i] for i in V1_SEEN)
+
+
+@DATASETS.register_module()
+class LVISV1ZSLUnseenDataset(ZSLDataset, LVISV1Dataset):
+    CLASSES = correct_classes(LVISV1Dataset.CLASSES[i] for i in V1_UNSEEN)
+
+
+@DATASETS.register_module()
+class LVISV1GZSLDataset(ZSLDataset, LVISV1Dataset):
+    pass

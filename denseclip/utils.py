@@ -5,13 +5,15 @@ from typing import Tuple
 import clip.model
 import clip.simple_tokenizer
 import einops
-import lmdb
 import todd
 import torch
 import torch.nn.functional as F
 import torchvision.transforms as transforms
 import torchvision.transforms.functional as tf
+from PIL.Image import Image as PILImage
+from mmcv import Config
 from mmcv.runner import TextLoggerHook
+from mmcv.cnn import NORM_LAYERS
 
 
 class SimpleTokenizer(clip.simple_tokenizer.SimpleTokenizer):
@@ -66,19 +68,45 @@ def encode_bboxes(
     image: torch.Tensor,
     bboxes: torch.Tensor,
 ) -> torch.Tensor:
-    if bboxes.shape[0] == 0:
-        return bboxes.new_zeros((0, 1024))
-    bboxes15 = todd.utils.expand_bboxes(bboxes, ratio=1.5, image_shape=image.shape[-2:])
-    bboxes = torch.cat([bboxes, bboxes15])
-    bboxes = bboxes[:, [1, 0, 3, 2]]  # tf.crop requires y, x, h, w
+    bboxes_ = todd.utils.BBoxes(bboxes)
+    if bboxes_.empty:
+        return bboxes_.to_tensor().new_zeros((0, 1024))
+    bboxes15_ = bboxes_.expand(ratio=1.5, image_shape=image.shape[-2:])
+    bboxes_ = bboxes_ + bboxes15_
+    bboxes = bboxes_.round().to_tensor()
     bboxes = bboxes.int().tolist()
-    crops = [tf.crop(image, *bbox) for bbox in bboxes]
+
+    pil_image = image[[2, 1, 0]].type(torch.uint8)  # BGR to RGB
+    pil_image: PILImage = tf.to_pil_image(pil_image)
+    crops = [pil_image.crop(bbox) for bbox in bboxes]
     crops = [preprocess(crop) for crop in crops]
     crops = torch.stack(crops)
     crops = model.encode_image(crops)
     crops = einops.reduce(crops, '(n b) d -> b d', n=2, reduction='sum')
     crops = F.normalize(crops, dim=-1)
     return crops
+
+
+def debug_init(debug: bool, cfg: Config):
+    if torch.cuda.is_available() and not debug:
+        return
+    if 'DEBUG' not in os.environ:
+        os.environ['DEBUG'] = '011' if torch.cuda.is_available() else '011111'
+    os.environ['DEBUG'] += '0' * 10
+    if has_debug_flag(1):
+        data_train = cfg.data.train
+        if 'dataset' in data_train:
+            data_train = data_train.dataset
+        if 'ann_file' in cfg.data.val:
+            data_train.ann_file = cfg.data.val.ann_file
+        if 'img_prefix' in cfg.data.val:
+            data_train.img_prefix = cfg.data.val.img_prefix
+        if 'proposal_file' in cfg.data.val:
+            data_train.proposal_file = cfg.data.val.proposal_file
+    if has_debug_flag(4):
+        NORM_LAYERS.register_module('SyncBN', force=True, module=NORM_LAYERS.get('BN'))
+    if has_debug_flag(5):
+        cfg.data.samples_per_gpu = 2
 
 
 def has_debug_flag(level: int) -> bool:
@@ -90,12 +118,11 @@ def has_debug_flag(level: int) -> bool:
         2: use smaller datasets
         3: use fewer gt bboxes
         4: cpu
+        5: use batch size 2
 
     Note:
         Flag 1/2/3 are set by default when cuda is unavailable.
     """
-    if not torch.cuda.is_available() and level in [1, 2, 3, 4]:
-        return True
-    flags = os.environ.get('DEBUG', '')
-    flags += '0' * 10
-    return bool(int(flags[level]))
+    if 'DEBUG' not in os.environ:
+        return False
+    return bool(int(os.environ['DEBUG'][level]))

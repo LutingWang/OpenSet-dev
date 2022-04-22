@@ -1,5 +1,5 @@
 _base_ = [
-    'coco_detection_clip.py',
+    'coco_detection.py',
 ]
 
 data_root = 'data/coco/'
