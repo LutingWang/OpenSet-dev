@@ -1,7 +1,4 @@
 from typing import Any, Dict, List, Tuple, Union, cast
-from denseclip.utils import has_debug_flag
-from mmdet.core.bbox.transforms import bbox2roi
-from mmdet.models.builder import HEADS
 
 import todd
 import todd.distillers
@@ -9,7 +6,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from mmcv import ConfigDict
-from mmdet.models import DETECTORS, RetinaHead, Shared4Conv1FCBBoxHead, StandardRoIHead
+from mmdet.core import bbox2roi
+from mmdet.models import DETECTORS, HEADS, RetinaHead, Shared4Conv1FCBBoxHead, StandardRoIHead
 
 from .datasets import COCO_INDEX_SEEN_48_17, COCO_ALL_48_17, CocoGZSLDataset, LVIS_V1_SEEN_866_337
 from .prompt import Classifier

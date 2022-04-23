@@ -1,20 +1,15 @@
-import os
-from typing import Any, Dict, List, Optional, Tuple, Union
-
-import einops
+from typing import Any, Dict, List, Optional, Tuple
 
 import clip
 import clip.model
+import einops
 import numpy as np
 import todd.datasets
 import todd.utils
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from mmcv.runner import BaseRunner, HOOKS, Hook, get_dist_info
-from mmcv.parallel import MMDataParallel, MMDistributedDataParallel
 from mmdet.models import DETECTORS, BaseDetector
-from todd.utils.criterions import BinaryAccuracy
 
 from .datasets import CocoGZSLDataset
 from .utils import encode_bboxes
@@ -29,12 +24,12 @@ class CLIPBaseDetector(BaseDetector):
         self._model: clip.model.CLIP = todd.utils.freeze_model(model)
         self._loss = nn.Parameter(torch.zeros([]), requires_grad=True)
 
-    def train(self, mode: bool = False):
+    def train(self, mode: bool = False) -> 'CLIPBaseDetector':
         super().train(False)
         return self
 
     @property
-    def device(self):
+    def device(self) -> torch.device:
         return self._model.visual.conv1.weight.device
 
     @torch.no_grad()
@@ -61,7 +56,7 @@ class CLIPBaseDetector(BaseDetector):
     def forward_train(self) -> Dict[str, torch.Tensor]:
         return dict(loss_zero=self._loss * 0)
 
-    def forward_test(self, batch_size: int):
+    def forward_test(self, batch_size: int) -> List[List[np.ndarray]]:
         bbox_results = [[
             np.zeros((0, 5), dtype=np.float32)
         ] * len(self.CLASSES)] * batch_size
@@ -74,10 +69,6 @@ class CLIPFeatureExtractor(CLIPBaseDetector):
         super().__init__(*args, **kwargs)
         self._train_writer = todd.datasets.PthAccessLayer(data_root=data_root, task_name='train', exist_ok=True)
         self._val_writer = todd.datasets.PthAccessLayer(data_root=data_root, task_name='val', exist_ok=True)
-
-    @property
-    def writer(self) -> todd.datasets.PthAccessLayer:
-        return self._train_writer if self.training else self._val_writer
 
     def extract_feat(
         self, 
@@ -140,20 +131,3 @@ class CLIPDetector(CLIPBaseDetector):
 
     def forward_test(self, img: torch.Tensor, *args, **kwargs):
         pass
-
-
-@HOOKS.register_module()
-class SaveLmdbToOSS(Hook):
-    def __init__(self, lmdb_filepath: str):
-        super().__init__()
-        self._lmdb_filepath = lmdb_filepath
-
-    def after_train_epoch(self, runner: BaseRunner):
-        super().after_val_epoch(runner)
-        rank, _ = get_dist_info()
-        lmdb_filepath = os.path.join(self._lmdb_filepath, f'worker{rank}')
-        os.makedirs(lmdb_filepath)
-
-        model: Union[MMDataParallel, MMDistributedDataParallel] = runner.model
-        module: CLIPFeatureExtractor = model.module
-        module._env.copy(lmdb_filepath)
