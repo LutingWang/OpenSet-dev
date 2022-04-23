@@ -171,8 +171,6 @@ class Classifier(nn.Module):
         return self._tau[self.training]
 
     def set_weight(self, weight: Optional[torch.Tensor], norm: bool = True):
-        if weight is None:
-            assert not norm
         if norm:
             weight = F.normalize(weight)
         self._weight = weight

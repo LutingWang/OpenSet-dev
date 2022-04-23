@@ -1,10 +1,11 @@
-from typing import Iterable, List, Tuple
+from typing import Any, Dict, Iterable, List, Tuple
+from denseclip.utils import has_debug_flag
 from mmdet.datasets import LVISV1Dataset, DATASETS
 
 from .zsl import ZSLDataset
 
 
-V1_SEEN = [  # 866 classes
+V1_SEEN_866_337 = [  # 866 classes
        0,    1,    2,    3,    4,    5,    6,    7,    8,    9, 
       10,   11,   14,   15,   17,   18,   21,   22,   23,   24, 
       25,   26,   27,   28,   31,   32,   33,   34,   35,   36, 
@@ -93,7 +94,7 @@ V1_SEEN = [  # 866 classes
     1186, 1187, 1188, 1189, 1190, 1191, 1193, 1194, 1195, 1196, 
     1197, 1198, 1199, 1200, 1201, 1202,
 ]
-V1_UNSEEN = [  # 337 classes
+V1_UNSEEN_866_337 = [  # 337 classes
       12,   13,   16,   19,   20,   29,   30,   37,   38,   39, 
       41,   48,   50,   51,   62,   68,   70,   77,   81,   84, 
       92,  104,  105,  112,  116,  118,  122,  125,  129,  130,  
@@ -132,24 +133,35 @@ V1_UNSEEN = [  # 337 classes
 
 
 def correct_classes(classes: Iterable[str]) -> Tuple[str]:
-    correct_classes = []
-    for class_ in classes:
-        if class_ == 'speaker_(stereo_equipment)':
-            class_ = 'speaker_(stero_equipment)'
-        correct_classes.append(class_)
-    return tuple(correct_classes)
+    class_map = {
+        'speaker_(stereo_equipment)': 'speaker_(stero_equipment)',
+    }
+    classes = list(classes)
+    for i, class_ in enumerate(classes):
+        if class_ in class_map:
+            classes[i] = class_map[class_]
+    return tuple(classes)
 
 
 @DATASETS.register_module()
 class LVISV1ZSLSeenDataset(ZSLDataset, LVISV1Dataset):
-    CLASSES = correct_classes(LVISV1Dataset.CLASSES[i] for i in V1_SEEN)
+    CLASSES = correct_classes(LVISV1Dataset.CLASSES[i] for i in V1_SEEN_866_337)
+
+    def _parse_ann_info(self, *args, **kwargs) -> Dict[str, Any]:
+        ann_info = super()._parse_ann_info(*args, **kwargs)
+        if has_debug_flag(1):
+            valid_indices = [i for i, label in enumerate(ann_info['labels'].tolist()) if label not in V1_UNSEEN_866_337]
+            ann_info['bboxes'] = ann_info['bboxes'][valid_indices]
+            ann_info['labels'] = ann_info['labels'][valid_indices]
+            ann_info['masks'] = [ann_info['masks'][i] for i in valid_indices]
+        return ann_info
 
 
 @DATASETS.register_module()
 class LVISV1ZSLUnseenDataset(ZSLDataset, LVISV1Dataset):
-    CLASSES = correct_classes(LVISV1Dataset.CLASSES[i] for i in V1_UNSEEN)
+    CLASSES = correct_classes(LVISV1Dataset.CLASSES[i] for i in V1_UNSEEN_866_337)
 
 
 @DATASETS.register_module()
 class LVISV1GZSLDataset(ZSLDataset, LVISV1Dataset):
-    pass
+    CLASSES = correct_classes(LVISV1Dataset.CLASSES)

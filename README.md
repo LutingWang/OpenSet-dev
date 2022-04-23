@@ -22,30 +22,7 @@ ln -s ${HOME}/.cache/torch/hub/checkpoints/ pretrained/torchvision
 ## Generate GZSL annotations
 
 ```shell
-$ python tools/build_zsl_dataset.py configs/_base_/datasets/coco_detection.py
-Splitting training dataset
-#categories: 48
-#annotations: 665387
-#deleted_images: 10526
-#images: 107761
-Saving to data/coco/annotations/instances_train2017_48_17_1.json
-
-Splitting validation dataset
-#categories: 65
-#annotations: 33152
-#deleted_images: 164
-#images: 4836
-Saving to data/coco/annotations/instances_val2017_48_17_1.json
-
-$ python tools/build_zsl_dataset.py configs/_base_/datasets/lvis_v1_detection.py
-Splitting training dataset
-#categories: 866
-#annotations: 1264884
-#deleted_images: 828
-#images: 99342
-Saving to data/lvis_v1/annotations/lvis_v1_train_seen_1.json
-
-Splitting validation dataset
+python tools/build_zsl_dataset.py configs/_base_/datasets/lvis_v1_detection.py --split 866_337
 ```
 
 ## Generate Proposals

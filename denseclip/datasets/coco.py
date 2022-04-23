@@ -14,6 +14,9 @@ from ..utils import has_debug_flag
 from .zsl import ZSLDataset
 
 
+# TODO: distinguish unseen from novel
+
+
 SEEN_65_15 = [
      0,  1,  2,  3,  5,  7,  8,  9, 10, 11, 13, 14, 16, 17, 18, 
     19, 20, 22, 23, 24, 25, 26, 27, 30, 32, 33, 34, 35, 36, 37, 

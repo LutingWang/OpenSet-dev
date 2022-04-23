@@ -19,7 +19,7 @@ train_pipeline = [
     dict(type='Normalize', **img_norm_cfg),
     dict(type='Pad', size_divisor=32),
     dict(type='DefaultFormatBundle'),
-    dict(type='Collect', keys=['img', 'gt_bboxes', 'gt_labels', 'gt_masks']),
+    dict(type='Collect', keys=['img', 'gt_bboxes', 'gt_labels']),
 ]
 data = dict(
     train=dict(
@@ -30,18 +30,12 @@ data = dict(
             type=dataset_type,
             ann_file=ann_file_root + 'annotations/lvis_v1_train.json',
             img_prefix=img_prefix,
-            pipeline=train_pipeline,
-        ),
-    ),
+            pipeline=train_pipeline)),
     val=dict(
         type=dataset_type,
         ann_file=ann_file_root + 'annotations/lvis_v1_val.json',
-        img_prefix=img_prefix,
-    ),
+        img_prefix=img_prefix),
     test=dict(
         type=dataset_type,
         ann_file=ann_file_root+ 'annotations/lvis_v1_val.json',
-        img_prefix=img_prefix,
-    ),
-)
-# evaluation = dict(metric=['bbox', 'segm'])
+        img_prefix=img_prefix))

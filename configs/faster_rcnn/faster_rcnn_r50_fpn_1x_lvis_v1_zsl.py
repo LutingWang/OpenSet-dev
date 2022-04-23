@@ -49,7 +49,7 @@ train_pipeline = [
 #     ),
 # ]
 data = dict(
-    samples_per_gpu=1,
+    # samples_per_gpu=2,
     train=dict(
         dataset=dict(
             # proposal_file=data_root + 'proposals/rpn_r101_fpn_lvis_v1_train.pkl',
@@ -71,20 +71,26 @@ model = dict(
         bbox_head=dict(
             type='ViLDTextBBoxHead',
             # class_embeddings=data_root + 'prompt/vild_ViT-B-32.pt',
-            class_embeddings=data_root + 'prompt/vild_ViT-B-32_detpro.pt',
+            class_embeddings=data_root + 'prompt/detpro_vild_ViT-B-32.pt',
             bg_class_embedding=True,
+            num_classes=1203,
         ),
         ensemble_head=dict(
             type='ViLDImageBBoxHead',
             distiller=dict(
-                student_hooks=dict(
-                    preds=dict(type='StandardHook', path='fc_cls[0]'),
-                ),
+                # student_hooks=dict(
+                #     preds=dict(type='StandardHook', path='fc_cls[0]'),
+                # ),
                 losses=dict(image=dict(
                     type='L1Loss',
                     tensor_names=['preds', 'targets'],
                     weight=256,
                 )),
+                schedulers=[dict(
+                    type='WarmupScheduler',
+                    tensor_names=['loss_image'],
+                    iter_=200,
+                )],
             ),
         ),
     ),
@@ -94,9 +100,9 @@ model = dict(
             max_per_img=300,
         ),
     ),
-    init_cfg=dict(type='Pretrained', checkpoint='data/ckpts/soco_mask_rcnn_r50_fpn_star_400e.pth'),
+    init_cfg=dict(type='Pretrained', checkpoint='data/ckpts/soco_star_mask_rcnn_r50_fpn_400e.pth'),
 )
 # load_from = 'data/ckpts/soco_mask_rcnn_r50_fpn_star_400e.pth'
-optimizer = dict(lr=0.02, weight_decay=0.000025)
-evaluation = dict(interval=2)
+optimizer = dict(lr=0.005, weight_decay=0.000025)
+evaluation = dict(interval=1)
 custom_hooks = []
