@@ -1,8 +1,16 @@
-from typing import Any, Dict, Iterable, List, Tuple
-from denseclip.utils import has_debug_flag
-from mmdet.datasets import LVISV1Dataset, DATASETS
+import logging
 
+import lvis  # fix logging format
+from mmdet.datasets import LVISV1Dataset, DATASETS
+from typing import Any, Dict, Iterable, List, Tuple
+
+from ..utils import has_debug_flag
 from .zsl import ZSLDataset
+
+
+logger = logging.getLogger()
+for handler in logger.handlers:
+    logger.removeHandler(handler)
 
 
 V1_SEEN_866_337 = [  # 866 classes

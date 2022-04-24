@@ -91,7 +91,7 @@ def debug_init(debug: bool, cfg: Config):
     if torch.cuda.is_available() and not debug:
         return
     if 'DEBUG' not in os.environ:
-        os.environ['DEBUG'] = '011' if torch.cuda.is_available() else '011111'
+        os.environ['DEBUG'] = '001' if torch.cuda.is_available() else '011111'
     os.environ['DEBUG'] += '0' * 10
     if has_debug_flag(1):
         data_train = cfg.data.train

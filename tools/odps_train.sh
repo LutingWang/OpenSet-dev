@@ -12,7 +12,29 @@ ENTRY_FILE=${ENTRY_FILE:-tools/train.py}
 WORKBENCH=${WORKBENCH:-search_algo_quality_dev}  # search_algo_quality_dev, imac_dev
 ROLEARN=${ROLEARN:-searchalgo}  # searchalgo, imac
 
-tar -zchf /tmp/${PROJECT_NAME}.tar.gz --exclude work_dirs --exclude data --exclude local_data --exclude pretrained --exclude .git .
+grep -r "ipdb" \
+    --exclude-dir .git \
+    --exclude-dir data \
+    --exclude-dir local_data \
+    --exclude-dir pretrained \
+    --exclude-dir work_dirs \
+    --exclude ./tools/odps_train.sh \
+    --exclude Pipfile \
+    --exclude Pipfile.lock \
+    --exclude requirements.txt \
+    .
+if [[ $? -eq 0 ]]; then
+    echo "ipdb is not allowed in this repo"
+    exit 1
+fi
+tar -zchf /tmp/${PROJECT_NAME}.tar.gz \
+    --exclude .git \
+    --exclude data \
+    --exclude local_data \
+    --exclude pretrained \
+    --exclude work_dirs \
+    .
+
 cmd_oss="
 use ${WORKBENCH};
 pai -name pytorch180

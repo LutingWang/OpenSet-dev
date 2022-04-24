@@ -99,22 +99,6 @@ class ViLDBaseBBoxHead(Shared4Conv1FCBBoxHead):
     def classifier(self) -> Classifier:
         return self.fc_cls[-1]
 
-    def _set_classifier_weight(self):
-        self.classifier.set_weight(self._class_embeddings, norm=False)
-
-    def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
-        self._set_classifier_weight()
-        cls_, reg = super().forward(x)
-        cls_ = cast(torch.Tensor, cls_)
-        if cls_.shape[-1] == self.num_classes:
-            bg_cls = torch.zeros_like(cls_[:, [0]])
-            cls_ = torch.cat([cls_, bg_cls], dim=1)
-        else:
-            assert cls_.shape[-1] == self.num_classes + 1, cls_.shape
-        if self.training:
-            cls_[..., self._unseen_ids] = float('-inf')
-        return cls_, reg
-
 
 @DETECTORS.register_module()
 class ViLDTextBBoxHead(ViLDBaseBBoxHead):
@@ -128,15 +112,21 @@ class ViLDTextBBoxHead(ViLDBaseBBoxHead):
         )
         nn.init.xavier_uniform_(self._bg_class_embedding)
 
-    def _set_classifier_weight(self):
-        if self._bg_class_embedding is None:
-            super()._set_classifier_weight()
-            return
-        class_embeddings = torch.cat([
-            self._class_embeddings, 
-            F.normalize(self._bg_class_embedding),
-        ], dim=0)
+    def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+        class_embeddings = (
+            self._class_embeddings if self._bg_class_embedding is None else 
+            torch.cat([
+                self._class_embeddings, 
+                F.normalize(self._bg_class_embedding),
+            ], dim=0)
+        )
         self.classifier.set_weight(class_embeddings, norm=False)
+        cls_, reg = super().forward(x)
+        cls_: torch.Tensor
+        assert cls_.shape[-1] == self.num_classes + 1, cls_.shape
+        if self.training:
+            cls_[..., self._unseen_ids] = float('-inf')
+        return cls_, reg
 
 
 @DETECTORS.register_module()
@@ -150,12 +140,13 @@ class ViLDImageBBoxHead(ViLDBaseBBoxHead):
         super().__init__(*args, with_reg=False, **kwargs)
 
     def forward(self, *args, **kwargs) -> Tuple[torch.Tensor, torch.Tensor]:
+        self.classifier.set_weight(None if self.training else self._class_embeddings, norm=False)
+        cls_, reg = super().forward(*args, **kwargs)
         if not self.training:
-            cls_, _ = super().forward(*args, **kwargs)
+            bg_cls = torch.zeros_like(cls_[:, [0]]) - float('inf')
+            cls_ = torch.cat([cls_, bg_cls], dim=1)
             self.distiller.reset()
-            return cls_, None
-        self.classifier.set_weight(None, norm=False)
-        return super(ViLDBaseBBoxHead, self).forward(*args, **kwargs)
+        return cls_, reg
 
     def loss(self, preds: torch.Tensor, targets: torch.Tensor) -> Dict[str, torch.Tensor]:
         return self.distiller.distill(dict(
@@ -180,14 +171,25 @@ class ViLDEnsembleRoIHead(StandardRoIHead):
         if self.with_mask:
             self.mask_head.init_weights()
 
-    # def _load_from_state_dict(self, state_dict: Dict[str, torch.Tensor], prefix: str, *args, **kwargs):
-    #     if not any('_ensemble_head' in k for k in state_dict):
-    #         state_dict.update({
-    #             '_ensemble_head'.join(k.split('bbox_head', 1)): v 
-    #             for k, v in state_dict.items() 
-    #             if k.startswith(prefix + 'bbox_head.')
-    #         })
-    #     return super()._load_from_state_dict(state_dict, prefix, *args, **kwargs)
+    def _load_from_state_dict(
+        self, 
+        state_dict: Dict[str, torch.Tensor], 
+        prefix: str, 
+        local_metadata: dict, 
+        strict: bool,
+        missing_keys: List[str], 
+        unexpected_keys: List[str], 
+        error_msgs: List[str],
+    ):
+        # if not any('_ensemble_head' in k for k in state_dict):
+        #     state_dict.update({
+        #         '_ensemble_head'.join(k.split('bbox_head', 1)): v 
+        #         for k, v in state_dict.items() 
+        #         if k.startswith(prefix + 'bbox_head.')
+        #     })
+        super()._load_from_state_dict(
+            state_dict, prefix, local_metadata, strict, missing_keys, unexpected_keys, error_msgs,
+        )
 
     def _bbox_forward(
         self, 

@@ -19,4 +19,4 @@ train_pipeline = [
     dict(type='Collect', keys=['img', 'gt_bboxes', 'gt_labels', 'gt_masks']),
 ]
 data = dict(train=dict(dataset=dict(pipeline=train_pipeline)))
-evaluation = dict(metric=['bbox', 'segm'])
+# evaluation = dict(metric=['bbox', 'segm'])
