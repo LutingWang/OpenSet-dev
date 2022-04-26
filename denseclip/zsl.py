@@ -10,7 +10,7 @@ from mmdet.core import bbox2roi
 from mmdet.models import DETECTORS, HEADS, RetinaHead, Shared4Conv1FCBBoxHead, StandardRoIHead
 
 from .datasets import COCO_INDEX_SEEN_48_17, COCO_ALL_48_17, CocoGZSLDataset, LVIS_V1_SEEN_866_337
-from .prompt import Classifier
+from .model import Classifier
 
 
 @DETECTORS.register_module()

@@ -18,6 +18,10 @@ train_pipeline = [
     dict(type='Normalize', **img_norm_cfg),
     dict(type='Pad', size_divisor=32),
     dict(type='DefaultFormatBundle'),
+    dict(type='ToTensor', keys=['bboxes', 'bbox_embeddings']),
+    dict(
+        type='ToDataContainer', 
+        fields=[dict(key='bboxes'), dict(key='bbox_embeddings')]),
     dict(type='Collect', keys=['img', 'gt_bboxes', 'gt_labels', 'bboxes', 'bbox_embeddings']),
 ]
 data = dict(

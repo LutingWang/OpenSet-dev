@@ -28,8 +28,12 @@ python tools/build_zsl_dataset.py configs/_base_/datasets/lvis_v1_detection.py -
 ## Generate Proposals
 
 ```shell
+# for coco
 sh tools/odps_test.sh configs/rpn/rpn_r101_fpn_1x_coco_train.py data/ckpts/rpn_r101_fpn_2x_coco_20200131-24e3db1a.pth 8 --out data/coco/proposals/rpn_r101_fpn_coco_train_48_17.pkl
 sh tools/odps_test.sh configs/rpn/rpn_r101_fpn_1x_coco_val.py data/ckpts/rpn_r101_fpn_2x_coco_20200131-24e3db1a.pth 8 --out data/coco/proposals/rpn_r101_fpn_coco_val_48_17.pkl
+
+# for lvis v1
+...
 ```
 
 ## Generate Class Embeddings
@@ -46,7 +50,7 @@ python tools/class_embeddings.py vild --dataset lvis_v1 --pretrained "ViT-B/32"
 ## Generate Proposal Embeddings
 
 ```shell
-sh tools/odps_train.sh debug configs/feature_extractor/clip_feature_extractor.py 8 --seed 3407 --cfg-options log_config.interval=4
+sh tools/odps_train.sh debug configs/feature_extractor/proposal_feature_extractor.py 8 --seed 3407 --cfg-options log_config.interval=4
 ```
 
 ## Directory Tree
@@ -101,14 +105,10 @@ DenseCLIP/data
     └── val2017 -> coco/val2017
 ```
 
-# Extract features
-
-For proposals (*needs refinement and check, may have bug of dataset split mismatch*)
+# ViLD*
 
 ```shell
-sh tools/odps_train.sh debug configs/feature_extractor/clip_proposal_feature_extractor.py 8 --seed 3407 --cfg-options log_config.interval=1
-# need to convert lmdb dataset to pth dataset
-sh tools/odps_train.sh prompt1 configs/prompt/prompt.py 1 --seed 3407
+sh tools/odps_train.sh debug configs/mask_rcnn/detpro_lvis_mask_rcnn_r50_fpn_20e_lvis_v1.py 8 --seed 3407
 ```
 
 # Resources

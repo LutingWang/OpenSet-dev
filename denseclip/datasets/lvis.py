@@ -1,6 +1,9 @@
 import logging
 
+import torch
+
 import lvis  # fix logging format
+from mmcv.parallel import DataContainer as DC
 from mmdet.datasets import LVISV1Dataset, DATASETS
 from typing import Any, Dict, Iterable, List, Tuple
 
@@ -173,3 +176,13 @@ class LVISV1ZSLUnseenDataset(ZSLDataset, LVISV1Dataset):
 @DATASETS.register_module()
 class LVISV1GZSLDataset(ZSLDataset, LVISV1Dataset):
     CLASSES = correct_classes(LVISV1Dataset.CLASSES)
+
+
+@DATASETS.register_module()
+class LVISV1PromptDataset(LVISV1GZSLDataset):
+    def __getitem__(self, *args, **kwargs) -> dict:
+        item = super().__getitem__(*args, **kwargs)
+        item['img'] = torch.zeros([])
+        if self.test_mode:
+            item['img'] = DC(item['img'])
+        return item

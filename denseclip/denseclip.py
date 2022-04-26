@@ -1,16 +1,128 @@
 from typing import Any, Dict, List, Optional, Tuple
 
 import einops
-from denseclip.prompt import CLIPDistiller, Classifier
+import clip.model
+import todd
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
+import torchvision.transforms as transforms
+from easydict import EasyDict
+from mmcv import ConfigDict
 from mmdet.core import AssignResult, anchor_inside_flags
 from mmdet.models import DETECTORS, RetinaHead, SingleStageDetector
 
 from .datasets import CocoGZSLDataset
-from .model import CLIPResNetWithAttention, ContextDecoder, RetinaRPNHead
+from .model import CLIPResNetWithAttention, ContextDecoder, RetinaRPNHead, Classifier
 from .prior_generator import AnchorGeneratorWithPos
-from .utils import encode_bboxes
+from .utils import SimpleTokenizer, encode_bboxes
+
+
+class VpeForwardPreHook(nn.Module):
+    def __init__(self, vpe: torch.Tensor):
+        super().__init__()
+        resolution = round((vpe.shape[0] - 1) ** 0.5)
+        assert resolution ** 2 + 1 == vpe.shape[0]
+        vpi = torch.arange(resolution ** 2)
+        vpi = einops.rearrange(vpi, '(h w) -> h w', h=resolution)
+        self._vpe = vpe
+        self._vpi = vpi
+    
+    def register(self, module: nn.Module):
+        delattr(module, 'positional_embedding')
+        # module._parameters.pop('positional_embedding')
+        module.register_forward_pre_hook(self)
+
+    def forward(self, module: clip.model.AttentionPool2d, input_: Tuple[torch.Tensor]):
+        _, _, h, w = input_[0].shape
+        vpi = einops.rearrange(self._vpi[:h, :w], 'h w -> (h w)')
+        vpi = torch.cat((vpi.new_tensor([0]), vpi + 1))
+        module.positional_embedding = self._vpe[vpi]
+
+
+class PromptFrowardHook(nn.Module):
+    def __init__(self, prompt_length: int, embedding_dim: int):
+        super().__init__()
+        self._prompt_length = prompt_length
+        self._prompt = nn.Parameter(torch.randn(prompt_length, embedding_dim))
+        nn.init.trunc_normal_(self._prompt)
+
+    def register(self, module: nn.Module):
+        module.register_forward_hook(self)
+
+    def forward(self, module: nn.Module, input_: Any, output: Any):
+        output[:, 1:1 + self._prompt_length] = self._prompt
+
+
+class CLIPDistiller(todd.distillers.SingleTeacherDistiller):
+    teacher: clip.model.CLIP
+
+    def __init__(self, *args, teacher_cfg: ConfigDict, **kwargs):
+        self._teacher_cfg = teacher_cfg
+
+        teacher = torch.jit.load(teacher_cfg.pretrained, map_location='cpu')
+        teacher = self.customize_teacher(teacher)
+        super().__init__(*args, teacher=teacher, **kwargs)
+
+        if teacher_cfg.get('image_only', False):
+            self.teacher.token_embedding = None
+            self.teacher.positional_embedding = None
+            self.teacher.transformer = None
+            self.teacher.ln_final = None
+            self.teacher.text_projection = None
+        else:
+            self._prompt_forward_hook = PromptFrowardHook(
+                prompt_length=teacher_cfg.prompt_length, 
+                embedding_dim=self.teacher.token_embedding.embedding_dim,
+            )
+            self._prompt_forward_hook.register(self.teacher.token_embedding)
+
+        if teacher_cfg.get('text_only', False):
+            delattr(self.teacher, 'visual')
+            self.teacher.visual = EasyDict(
+                conv1=self.teacher.token_embedding,  # hack self.teacher.dtype
+            )
+        else:
+            self._vpe_forward_pre_hook = VpeForwardPreHook(
+                vpe=self.teacher.visual.attnpool.positional_embedding, 
+            )
+            self._vpe_forward_pre_hook.register(self.teacher.visual.attnpool)
+
+    def customize_teacher(self, teacher: nn.Module) -> nn.Module:
+        state_dict = teacher.state_dict()
+
+        input_resolution = self._teacher_cfg.get('input_resolution')
+        if input_resolution is not None and state_dict['input_resolution'] != input_resolution:
+            # state_dict['input_resolution'] = input_resolution
+            assert 'visual.proj' not in state_dict
+            vpe_name = 'visual.attnpool.positional_embedding'
+            source_resolution = state_dict['input_resolution'] // 32
+            target_resolution = input_resolution // 32
+            assert source_resolution ** 2 + 1 == state_dict[vpe_name].shape[0]
+
+            cls_pos = state_dict[vpe_name][[0]]
+            spatial_pos = state_dict[vpe_name][1:]
+            spatial_pos = einops.rearrange(spatial_pos, '(h w) dim -> 1 dim h w', h=source_resolution)
+            spatial_pos = F.interpolate(spatial_pos, size=(target_resolution,) * 2, mode='bilinear')  # TODO: supress warning
+            spatial_pos = einops.rearrange(spatial_pos, '1 dim h w -> (h w) dim')
+            vpe = torch.cat([cls_pos, spatial_pos])
+            state_dict[vpe_name] = vpe
+
+        context_length = self._teacher_cfg.get('context_length')
+        if context_length is not None and state_dict['context_length'] > context_length:
+            # state_dict['context_length'] = teacher_cfg.context_length
+            state_dict['positional_embedding'] = state_dict['positional_embedding'][:context_length]
+
+        teacher = clip.model.build_model(state_dict).float()
+        return teacher
+
+    @property
+    def num_features(self) -> int:
+        return self.teacher.visual.output_dim
+
+    # @property
+    # def device(self) -> torch.device:
+    #     return self._prompt_forward_hook._prompt.device
 
 
 @DETECTORS.register_module()

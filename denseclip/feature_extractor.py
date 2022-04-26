@@ -65,14 +65,6 @@ class LoadImageFromRegions:
         return results
 
 
-# class CLIPBaseDetector(BaseDetector):
-
-
-    # @property
-    # def device(self) -> torch.device:
-    #     return self._model.visual.conv1.weight.device
-
-
 @DETECTORS.register_module()
 class CLIPFeatureExtractor(BaseDetector):
     CLASSES: Tuple[str]

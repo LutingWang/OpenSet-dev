@@ -1,5 +1,5 @@
 import os
-from typing import Any, List, Tuple
+from typing import Any, List, Optional, Tuple
 
 import clip.model
 import einops
@@ -246,3 +246,53 @@ class RetinaRPNHead(RetinaHead):
         if self.training:
             return RPNHeadWithPos._bbox_post_process(self, *args, **kwargs)
         return super()._bbox_post_process(*args, **kwargs)
+
+
+class Classifier(nn.Module):
+    def __init__(self, tau: Tuple[float, float] = (0.07, 0.07), bias: Optional[float] = None):
+        super().__init__()
+        if isinstance(tau, float):
+            tau = (tau, tau)
+        self._tau = tau
+        self._bias = (
+            None if bias is None else 
+            nn.Parameter(torch.FloatTensor(data=[bias]))
+        )
+
+    @property
+    def tau(self) -> float:
+        return self._tau[self.training]
+
+    def set_weight(self, weight: Optional[torch.Tensor], norm: bool = True):
+        if norm:
+            weight = F.normalize(weight)
+        self._weight = weight
+
+    def forward_hook(
+        self, module: Any, input_: Any, output: torch.Tensor, 
+    ) -> torch.Tensor:
+        return self.forward(output)
+
+    def forward(self, x: torch.Tensor, norm: bool = True) -> torch.Tensor:
+        if norm:
+            x = F.normalize(x)
+        if self._weight is None:
+            return x
+        if x.ndim == 2:
+            input_pattern = 'b c'
+            output_pattern = 'b k'
+        elif x.ndim == 4:
+            input_pattern = 'b c h w'
+            output_pattern = 'b k h w'
+        if self._weight.ndim == 2:
+            weight_pattern = 'k c'
+        elif self._weight.ndim == 3:
+            weight_pattern = 'b k c'
+        x = torch.einsum(
+            f'{input_pattern}, {weight_pattern} -> {output_pattern}', 
+            x, self._weight,
+        )
+        x = x / self.tau
+        if self._bias is not None:
+            x = x + self._bias
+        return x
