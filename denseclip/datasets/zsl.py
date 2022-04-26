@@ -1,16 +1,14 @@
 from typing import Any, List
 
 import torch
-from mmdet.datasets import DATASETS
 
 from ..utils import has_debug_flag
 
 
-@DATASETS.register_module()
 class ZSLDataset:
     def __len__(self):
         if has_debug_flag(2):
-            return 20
+            return 4
         return super().__len__()
 
     def load_annotations(self, *args, **kwargs):

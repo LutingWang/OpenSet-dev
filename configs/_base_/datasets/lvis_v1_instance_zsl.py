@@ -7,7 +7,7 @@ img_norm_cfg = dict(
     mean=[123.675, 116.28, 103.53], std=[58.395, 57.12, 57.375], to_rgb=True)
 train_pipeline = [
     dict(type='LoadImageFromFile'),
-    dict(type='LoadProposalEmbeddings', data_root='data/lvis_v1/proposal_embeddings4/'),
+    dict(type='LoadEmbeddings', data_root='data/lvis_v1/proposal_embeddings4/'),
     dict(type='LoadAnnotations', with_bbox=True, with_mask=True),
     dict(
         type='Resize',
@@ -18,6 +18,10 @@ train_pipeline = [
     dict(type='Normalize', **img_norm_cfg),
     dict(type='Pad', size_divisor=32),
     dict(type='DefaultFormatBundle'),
+    dict(type='ToTensor', keys=['bboxes', 'bbox_embeddings']),
+    dict(
+        type='ToDataContainer', 
+        fields=[dict(key='bboxes'), dict(key='bbox_embeddings')]),
     dict(type='Collect', keys=['img', 'gt_bboxes', 'gt_labels', 'gt_masks', 'bboxes', 'bbox_embeddings']),
 ]
 data = dict(

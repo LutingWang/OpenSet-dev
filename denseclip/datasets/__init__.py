@@ -11,11 +11,11 @@ from .lvis import V1_SEEN_866_337 as LVIS_V1_SEEN_866_337
 from .lvis import V1_UNSEEN_866_337 as LVIS_V1_UNSEEN_866_337
 from .lvis import LVISV1ZSLSeenDataset, LVISV1ZSLUnseenDataset, LVISV1GZSLDataset
 
-from .pipelines import LoadImageFromRegions, LoadProposalEmbeddings
+from .pipelines import LoadEmbeddings
 
 
 __all__ = [
     'COCO_SEEN_48_17', 'COCO_UNSEEN_48_17', 'COCO_ALL_48_17', 'CocoZSLSeenDataset', 'CocoZSLUnseenDataset', 'CocoGZSLDataset',
     'LVIS_V1_SEEN_866_337', 'LVIS_V1_UNSEEN_866_337', 'LVISV1ZSLSeenDataset', 'LVISV1ZSLUnseenDataset', 'LVISV1GZSLDataset',
-    'LoadImageFromRegions', 'LoadProposalEmbeddings',
+    'LoadImageFromRegions', 'LoadEmbeddings',
 ]

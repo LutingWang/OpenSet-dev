@@ -171,6 +171,10 @@ class ViLDEnsembleRoIHead(StandardRoIHead):
         if self.with_mask:
             self.mask_head.init_weights()
 
+    @property
+    def with_mask(self):
+        return self.training and super().with_mask
+
     def _load_from_state_dict(
         self, 
         state_dict: Dict[str, torch.Tensor], 

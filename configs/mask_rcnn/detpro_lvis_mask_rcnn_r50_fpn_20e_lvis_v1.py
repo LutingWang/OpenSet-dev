@@ -14,5 +14,5 @@ model = dict(
         mask_head=dict(num_classes=1203),
     ),
 )
-optimizer = dict(lr=0.005, weight_decay=0.000025)
-evaluation = dict(interval=1)
+# optimizer = dict(lr=0.005, weight_decay=0.000025)
+evaluation = dict(interval=2)

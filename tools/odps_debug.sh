@@ -7,7 +7,7 @@ ENTRY_FILE=${ENTRY_FILE:-tools/debug.py}
 WORKBENCH=${WORKBENCH:-search_algo_quality_dev}  # search_algo_quality_dev, imac_dev
 ROLEARN=${ROLEARN:-searchalgo}  # searchalgo, imac
 
-tar -zchf /tmp/${PROJECT_NAME}.tar.gz ${ENTRY_FILE} requirements.txt
+tar -zchf /tmp/${PROJECT_NAME}.tar.gz ${ENTRY_FILE}
 cmd_oss="
 use ${WORKBENCH};
 pai -name pytorch180

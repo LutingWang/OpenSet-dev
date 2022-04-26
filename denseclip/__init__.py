@@ -2,7 +2,8 @@ import todd
 
 from . import datasets
 from . import utils
-from .clip import CLIPFeatureExtractor, CLIPDetector
+from .clip import CLIPDetector
+from .feature_extractor import CLIPFeatureExtractor
 from .denseclip import DenseCLIP_RetinaNet
 from .model import CLIPResNet, CLIPResNetWithoutAttention, CLIPResNetWithAttention, RetinaRPNHead
 from .prior_generator import AnchorGeneratorWithPos

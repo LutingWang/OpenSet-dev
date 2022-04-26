@@ -93,7 +93,7 @@ def debug_init(debug: bool, cfg: Config):
     if 'DEBUG' not in os.environ:
         os.environ['DEBUG'] = '001' if torch.cuda.is_available() else '011111'
     os.environ['DEBUG'] += '0' * 10
-    if has_debug_flag(1):
+    if has_debug_flag(1) and 'data' in cfg and 'train' in cfg.data:
         data_train = cfg.data.train
         if 'dataset' in data_train:
             data_train = data_train.dataset
