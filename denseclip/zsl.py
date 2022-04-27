@@ -128,6 +128,10 @@ class ViLDTextBBoxHead(ViLDBaseBBoxHead):
             cls_[..., self._unseen_ids] = float('-inf')
         return cls_, reg
 
+    def get_targets(self, sampling_results, gt_bboxes, gt_labels, rcnn_train_cfg, concat=True):
+        import ipdb; ipdb.set_trace()
+        return super().get_targets(sampling_results, gt_bboxes, gt_labels, rcnn_train_cfg, concat)
+
 
 @DETECTORS.register_module()
 @todd.distillers.SelfDistiller.wrap()

@@ -7,7 +7,7 @@ _base_ = [
 dataset_type='LVISV1PromptDataset'
 embeddings_root = 'data/lvis_v1/proposal_embeddings4/'
 train_pipeline = [
-    dict(type='LoadEmbeddings', data_root=embeddings_root),
+    dict(type='LoadPthEmbeddings', data_root=embeddings_root),
     dict(type='LoadAnnotations', with_bbox=True),
     dict(type='DefaultFormatBundle'),
     dict(type='ToTensor', keys=['bboxes', 'bbox_embeddings']),
@@ -17,7 +17,7 @@ train_pipeline = [
     dict(type='Collect', keys=['gt_bboxes', 'gt_labels', 'bboxes', 'bbox_embeddings'], meta_keys=tuple()),
 ]
 test_pipeline = [
-    dict(type='LoadEmbeddings', data_root=embeddings_root),
+    dict(type='LoadPthEmbeddings', data_root=embeddings_root),
     dict(type='ToTensor', keys=['bboxes', 'bbox_embeddings']),
     dict(
         type='ToDataContainer', 

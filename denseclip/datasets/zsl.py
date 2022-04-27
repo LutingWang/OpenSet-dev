@@ -14,6 +14,10 @@ class ZSLDataset:
     def load_annotations(self, *args, **kwargs):
         data_infos = super().load_annotations(*args, **kwargs)
         if has_debug_flag(2):
+            # if not self.test_mode:
+            #     self.coco.dataset['images'] = [self.coco.dataset['images'][i] for i in [77076, 32658, 48276, 94712]]
+            #     data_infos = [data_infos[i] for i in [77076, 32658, 48276, 94712]]
+
             self.coco.dataset['images'] = self.coco.dataset['images'][:len(self)]
             self.img_ids = [img['id'] for img in self.coco.dataset['images']]
             self.coco.dataset['annotations'] = [
@@ -26,6 +30,10 @@ class ZSLDataset:
 
     def load_proposals(self, proposal_file: str) -> List[torch.Tensor]:
         proposals = super().load_proposals(proposal_file)
+        if has_debug_flag(2):
+            # if not self.test_mode:
+            #     proposals = [proposals[i] for i in [77076, 32658, 48276, 94712]]
+            proposals = proposals[:len(self)]
         assert len(proposals) == len(self.data_infos)  # len(self) is set manually when debugging
         return proposals
 

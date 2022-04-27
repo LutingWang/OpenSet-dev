@@ -2,12 +2,12 @@ _base_ = [
     'lvis_v1_detection.py',
 ]
 
-ann_file_root = 'data/lvis_v1/'
+data_root = 'data/lvis_v1/'
 img_norm_cfg = dict(
     mean=[123.675, 116.28, 103.53], std=[58.395, 57.12, 57.375], to_rgb=True)
 train_pipeline = [
     dict(type='LoadImageFromFile'),
-    dict(type='LoadEmbeddings', data_root='data/lvis_v1/proposal_embeddings4/'),
+    dict(type='LoadPthEmbeddings', data_root='data/lvis_v1/proposal_embeddings4/'),
     dict(type='LoadAnnotations', with_bbox=True),
     dict(
         type='Resize',
@@ -27,7 +27,7 @@ train_pipeline = [
 data = dict(
     train=dict(dataset=dict(
         type='LVISV1ZSLSeenDataset',
-        ann_file=ann_file_root + 'annotations/lvis_v1_train_866_337_4.json',
+        ann_file=data_root + 'annotations/lvis_v1_train_866_337_4.json',
         pipeline=train_pipeline,
     )),
     val=dict(type='LVISV1GZSLDataset'),

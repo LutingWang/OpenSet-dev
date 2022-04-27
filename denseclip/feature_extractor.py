@@ -29,11 +29,11 @@ class LoadImageFromRegions:
         results['id'] = results['img_info']['id']
 
         if len(results['bbox_fields']) == 1:
-            assert results['bbox_fields'][0] == 'bboxes'
-            bbox_field = 'bboxes'
+            assert results['bbox_fields'][0] == 'proposals', results['bbox_fields']
+            bbox_field = 'proposals'
         elif len(results['bbox_fields']) == 2:
-            assert 'gt_bboxes' in results['bbox_fields']
-            assert 'gt_bboxes_ignore' in results['bbox_fields']
+            assert 'gt_bboxes' in results['bbox_fields'], results['bbox_fields']
+            assert 'gt_bboxes_ignore' in results['bbox_fields'], results['bbox_fields']
             bbox_field = 'gt_bboxes'
         else:
             raise ValueError(f'Unexpected bbox_fields: {results["bbox_fields"]}')
