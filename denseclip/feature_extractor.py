@@ -4,6 +4,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import PIL.Image as Image
 import clip
 import clip.model
+import cv2
 import einops
 import numpy as np
 import todd.datasets
@@ -26,7 +27,19 @@ class LoadImageFromRegions:
         self._preprocess = clip.clip._transform(n_px)
 
     def __call__(self, results: dict) -> dict:
-        results['id'] = results['img_info']['id']
+        if 'img_fields' not in results or len(results['img_fields']) == 0:
+            filename = os.path.join(
+                results['img_prefix'], results['img_info']['filename'],
+            )
+            image = Image.open(filename)
+        elif len(results['img_fields']) == 1:
+            assert results['img_fields'][0] == 'img', results['img_fields']
+            image: np.ndarray = results['img']
+            image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+            image: Image.Image = Image.fromarray(image)
+        else:
+            raise ValueError(f"Unexpected img_fields: {results['img_fields']}")
+        results['img_fields'] = ['img']
 
         if len(results['bbox_fields']) == 1:
             assert results['bbox_fields'][0] == 'proposals', results['bbox_fields']
@@ -36,9 +49,9 @@ class LoadImageFromRegions:
             assert 'gt_bboxes_ignore' in results['bbox_fields'], results['bbox_fields']
             bbox_field = 'gt_bboxes'
         else:
-            raise ValueError(f'Unexpected bbox_fields: {results["bbox_fields"]}')
-
+            raise ValueError(f"Unexpected bbox_fields: {results['bbox_fields']}")
         results['bbox_fields'] = ['bboxes']
+
         bboxes = results[bbox_field]
         if has_debug_flag(3):
             bboxes = bboxes[:5]
@@ -47,21 +60,18 @@ class LoadImageFromRegions:
         results['bboxes'] = DC(bboxes.to_tensor())
 
         if bboxes.empty:
-            results['img'] = DC(torch.zeros(0, 3, self._n_px, self._n_px))
-            return results
-
-        assert results['img_prefix'] is not None
-        filename = os.path.join(
-            results['img_prefix'], results['img_info']['filename'],
-        )
-        with Image.open(filename) as image:
+            regions = torch.zeros(0, 3, self._n_px, self._n_px)
+        else:
             bboxes15 = bboxes.expand(ratio=1.5, image_shape=(image.height, image.width))
             bboxes = bboxes + bboxes15
-            img = torch.stack([
+            regions = torch.stack([
                 self._preprocess(image.crop(bbox)) 
                 for bbox in bboxes.round().to_tensor().int().tolist()
             ])
-        results['img'] = DC(img)
+        image.close()
+        results['img'] = DC(regions)
+
+        results['id'] = results['img_info']['id']
         return results
 
 
@@ -69,9 +79,9 @@ class LoadImageFromRegions:
 class CLIPFeatureExtractor(BaseDetector):
     CLASSES: Tuple[str]
 
-    def __init__(self, *args, pretrained: str = 'pretrained/clip/RN50.pt', data_root: str, **kwargs):
+    def __init__(self, *args, clip_model: str = 'pretrained/clip/RN50.pt', data_root: str, **kwargs):
         super().__init__()
-        model, _ = clip.load(pretrained)
+        model, _ = clip.load(clip_model)
         self._model: clip.model.CLIP = todd.utils.freeze_model(model)
         self._loss = nn.Parameter(torch.zeros([]), requires_grad=True)
         self._train_writer = todd.datasets.PthAccessLayer(data_root=data_root, task_name='train', readonly=False, exist_ok=True)
@@ -90,7 +100,7 @@ class CLIPFeatureExtractor(BaseDetector):
     @torch.no_grad()
     def extract_feat(
         self, 
-        img: torch.Tensor,
+        img: List[torch.Tensor],
         img_metas: List[dict], 
         *args, 
         writer: todd.datasets.PthAccessLayer,
@@ -106,10 +116,12 @@ class CLIPFeatureExtractor(BaseDetector):
             ]
         else:
             imgs: torch.Tensor = self._model.encode_image(imgs)
-            crops = [F.normalize(
-                einops.reduce(crops, '(n b) d -> b d', n=2, reduction='sum'), 
-                dim=-1,
-            ) for crops in imgs.split(batch_sizes)]
+            crops = [
+                F.normalize(einops.reduce(
+                    crops, '(n b) d -> b d', n=2, reduction='sum',
+                ), dim=-1) 
+                for crops in imgs.split(batch_sizes)
+            ]
 
         for img_meta, value in zip(img_metas, zip(bboxes, crops)):
             writer[img_meta['id']] = value

@@ -13,6 +13,5 @@ data = dict(
     test=dict(test_mode=False, pipeline=pipeline),
 )
 model = dict(
-    pretrained='pretrained/clip/ViT-B-32.pt',
     data_root='data/lvis_v1/gt_embeddings5/',
 )

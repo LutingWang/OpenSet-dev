@@ -16,31 +16,31 @@ from mmcv.runner import TextLoggerHook
 from mmcv.cnn import NORM_LAYERS
 
 
-class SimpleTokenizer(clip.simple_tokenizer.SimpleTokenizer):
-    def __init__(self, *args, context_length: int, prompt_length: int, **kwargs):
-        super().__init__(*args, **kwargs)
-        self._context_length = context_length
-        self._prompt_length = prompt_length
-        self._cache = {}
+# class SimpleTokenizer(clip.simple_tokenizer.SimpleTokenizer):
+#     def __init__(self, *args, context_length: int, prompt_length: int, **kwargs):
+#         super().__init__(*args, **kwargs)
+#         self._context_length = context_length
+#         self._prompt_length = prompt_length
+#         self._cache = {}
 
-    def tokenize(self, texts: Tuple[str], device: torch.device):
-        texts_hash = len(texts)
-        if texts_hash in self._cache:
-            return self._cache[texts_hash]
+#     def tokenize(self, texts: Tuple[str], device: torch.device):
+#         texts_hash = len(texts)
+#         if texts_hash in self._cache:
+#             return self._cache[texts_hash]
 
-        sot_token = self.encoder["<|startoftext|>"]
-        eot_token = self.encoder["<|endoftext|>"]
+#         sot_token = self.encoder["<|startoftext|>"]
+#         eot_token = self.encoder["<|endoftext|>"]
 
-        tokens = torch.zeros(len(texts), self._context_length, dtype=torch.long, device=device)
+#         tokens = torch.zeros(len(texts), self._context_length, dtype=torch.long, device=device)
 
-        for token, text in zip(tokens, texts):
-            token_ = self.encode(text)
-            token_ = [sot_token] * (1 + self._prompt_length) + token_ + [eot_token]
-            assert len(token_) <= token.shape[0]
-            token[:len(token_)] = token.new_tensor(token_)
+#         for token, text in zip(tokens, texts):
+#             token_ = self.encode(text)
+#             token_ = [sot_token] * (1 + self._prompt_length) + token_ + [eot_token]
+#             assert len(token_) <= token.shape[0]
+#             token[:len(token_)] = token.new_tensor(token_)
 
-        self._cache[texts_hash] = tokens
-        return tokens
+#         self._cache[texts_hash] = tokens
+#         return tokens
 
 
 def odps_init():
@@ -61,30 +61,30 @@ def odps_init():
     logger.debug(f"ODPS initialization done with {os.listdir('.')}.")
 
 
-@torch.no_grad()
-def encode_bboxes(
-    model: clip.model.CLIP, 
-    preprocess: transforms.Compose,
-    image: torch.Tensor,
-    bboxes: torch.Tensor,
-) -> torch.Tensor:
-    bboxes_ = todd.utils.BBoxes(bboxes)
-    if bboxes_.empty:
-        return bboxes_.to_tensor().new_zeros((0, 1024))
-    bboxes15_ = bboxes_.expand(ratio=1.5, image_shape=image.shape[-2:])
-    bboxes_ = bboxes_ + bboxes15_
-    bboxes = bboxes_.round().to_tensor()
-    bboxes = bboxes.int().tolist()
+# @torch.no_grad()
+# def encode_bboxes(
+#     model: clip.model.CLIP, 
+#     preprocess: transforms.Compose,
+#     image: torch.Tensor,
+#     bboxes: torch.Tensor,
+# ) -> torch.Tensor:
+#     bboxes_ = todd.utils.BBoxes(bboxes)
+#     if bboxes_.empty:
+#         return bboxes_.to_tensor().new_zeros((0, 1024))
+#     bboxes15_ = bboxes_.expand(ratio=1.5, image_shape=image.shape[-2:])
+#     bboxes_ = bboxes_ + bboxes15_
+#     bboxes = bboxes_.round().to_tensor()
+#     bboxes = bboxes.int().tolist()
 
-    pil_image = image[[2, 1, 0]].type(torch.uint8)  # BGR to RGB
-    pil_image: PILImage = tf.to_pil_image(pil_image)
-    crops = [pil_image.crop(bbox) for bbox in bboxes]
-    crops = [preprocess(crop) for crop in crops]
-    crops = torch.stack(crops)
-    crops = model.encode_image(crops)
-    crops = einops.reduce(crops, '(n b) d -> b d', n=2, reduction='sum')
-    crops = F.normalize(crops, dim=-1)
-    return crops
+#     pil_image = image[[2, 1, 0]].type(torch.uint8)  # BGR to RGB
+#     pil_image: PILImage = tf.to_pil_image(pil_image)
+#     crops = [pil_image.crop(bbox) for bbox in bboxes]
+#     crops = [preprocess(crop) for crop in crops]
+#     crops = torch.stack(crops)
+#     crops = model.encode_image(crops)
+#     crops = einops.reduce(crops, '(n b) d -> b d', n=2, reduction='sum')
+#     crops = F.normalize(crops, dim=-1)
+#     return crops
 
 
 def debug_init(debug: bool, cfg: Config):

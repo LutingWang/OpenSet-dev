@@ -27,5 +27,7 @@ data = dict(
 )
 model = dict(
     type='CLIPFeatureExtractor',
+    clip_model='pretrained/clip/ViT-B-32.pt',
+    backbone=dict(),
 )
 runner = dict(max_epochs=1)

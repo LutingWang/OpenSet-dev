@@ -1,4 +1,4 @@
-from typing import Any, Dict, List, Tuple, Union, cast
+from typing import Any, Dict, List, Optional, Tuple, Union, cast
 
 import todd
 import todd.distillers
@@ -7,7 +7,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from mmcv import ConfigDict
 from mmdet.core import bbox2roi
-from mmdet.models import DETECTORS, HEADS, RetinaHead, Shared4Conv1FCBBoxHead, StandardRoIHead
+from mmdet.models import DETECTORS, HEADS, LOSSES, RetinaHead, Shared4Conv1FCBBoxHead, StandardRoIHead, KnowledgeDistillationKLDivLoss
 
 from .datasets import COCO_INDEX_SEEN_48_17, COCO_ALL_48_17, CocoGZSLDataset, LVIS_V1_SEEN_866_337
 from .model import Classifier
@@ -54,6 +54,39 @@ class RetinaHeadZSL(RetinaHead):
                 return super().aug_test(*args, **kwargs)
 
 
+@LOSSES.register_module()
+class KLDivLossZSL(KnowledgeDistillationKLDivLoss):
+    def set_valid_ids(self, valid_ids: List[int]):
+        self._valid_ids = valid_ids
+
+    def set_class_similarities(self, class_similarities: torch.Tensor):
+        # assert not hasattr('_class_similarities', self)
+        # class_similarities: torch.Tensor = class_embeddings @ class_embeddings.T
+        # class_similarities = class_similarities.softmax(dim=-1)
+        # class_similarities = torch.cat([class_similarities, torch.zeros_like(class_similarities[[0]])], dim=0)
+        # class_similarities = torch.cat([class_similarities, torch.zeros_like(class_similarities[:, [0]])], dim=-1)
+        # class_similarities[-1][-1] = 1
+        # self._class_similarities = nn.Parameter(
+        #     class_similarities, requires_grad=False,
+        # )
+        self._class_similarities = class_similarities[:, self._valid_ids]
+
+    def forward(
+        self,
+        cls_score: torch.Tensor,
+        label: torch.Tensor,
+        weight: Optional[torch.Tensor] = None,
+        avg_factor: Optional[int] = None,
+        reduction_override: Optional[str] = None,
+        **kwargs,
+    ) -> torch.Tensor:
+        pred = cls_score[:, self._valid_ids]
+        soft_label = self._class_similarities[label]
+        return super().forward(
+            pred, soft_label, weight, avg_factor, reduction_override,
+        )
+
+
 class ViLDBaseBBoxHead(Shared4Conv1FCBBoxHead):
     def __init__(
         self, 
@@ -86,6 +119,9 @@ class ViLDBaseBBoxHead(Shared4Conv1FCBBoxHead):
             nn.Linear(self.fc_out_channels, self.embedding_dim),
             Classifier(tau=(0.007, 0.01)),
         )
+
+        if isinstance(self.loss_cls, KLDivLossZSL):
+            self.loss_cls.set_valid_ids(self._seen_ids + [self.num_classes])
         
         # do not put into init_weight, since PretrainedInit will skip it
         nn.init.xavier_uniform_(self.fc_cls[0].weight)
@@ -99,10 +135,19 @@ class ViLDBaseBBoxHead(Shared4Conv1FCBBoxHead):
     def classifier(self) -> Classifier:
         return self.fc_cls[-1]
 
+    @property
+    def class_embeddings(self) -> torch.Tensor:
+        return self._class_embeddings
+
 
 @DETECTORS.register_module()
 class ViLDTextBBoxHead(ViLDBaseBBoxHead):
-    def __init__(self, *args, bg_class_embedding: bool = True, **kwargs):
+    def __init__(
+        self, 
+        *args, 
+        bg_class_embedding: bool = True, 
+        **kwargs,
+    ):
         super().__init__(*args, **kwargs)
         if not bg_class_embedding:
             self._bg_class_embedding = None
@@ -112,25 +157,30 @@ class ViLDTextBBoxHead(ViLDBaseBBoxHead):
         )
         nn.init.xavier_uniform_(self._bg_class_embedding)
 
+    @property
+    def class_embeddings(self) -> torch.Tensor:
+        class_embeddings = super().class_embeddings 
+        if self._bg_class_embedding is None:
+            return class_embeddings
+        bg_class_embeddings = F.normalize(self._bg_class_embedding)
+        return torch.cat([class_embeddings, bg_class_embeddings], dim=0)
+
     def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
-        class_embeddings = (
-            self._class_embeddings if self._bg_class_embedding is None else 
-            torch.cat([
-                self._class_embeddings, 
-                F.normalize(self._bg_class_embedding),
-            ], dim=0)
-        )
+        class_embeddings = self.class_embeddings
         self.classifier.set_weight(class_embeddings, norm=False)
+        if isinstance(self.loss_cls, KLDivLossZSL):
+            with torch.no_grad():
+                class_similarities = self.classifier(class_embeddings)
+            self.loss_cls.set_class_similarities(class_similarities)
+
         cls_, reg = super().forward(x)
         cls_: torch.Tensor
         assert cls_.shape[-1] == self.num_classes + 1, cls_.shape
         if self.training:
+            # setting score=-inf for unseen class
+            # not including background
             cls_[..., self._unseen_ids] = float('-inf')
         return cls_, reg
-
-    def get_targets(self, sampling_results, gt_bboxes, gt_labels, rcnn_train_cfg, concat=True):
-        import ipdb; ipdb.set_trace()
-        return super().get_targets(sampling_results, gt_bboxes, gt_labels, rcnn_train_cfg, concat)
 
 
 @DETECTORS.register_module()
@@ -143,8 +193,12 @@ class ViLDImageBBoxHead(ViLDBaseBBoxHead):
         kwargs.pop('bg_class_embedding', None)
         super().__init__(*args, with_reg=False, **kwargs)
 
+    @property
+    def class_embeddings(self) -> Optional[torch.Tensor]:
+        return None if self.training else super().class_embeddings
+
     def forward(self, *args, **kwargs) -> Tuple[torch.Tensor, torch.Tensor]:
-        self.classifier.set_weight(None if self.training else self._class_embeddings, norm=False)
+        self.classifier.set_weight(self.class_embeddings, norm=False)
         cls_, reg = super().forward(*args, **kwargs)
         if not self.training:
             bg_cls = torch.zeros_like(cls_[:, [0]]) - float('inf')

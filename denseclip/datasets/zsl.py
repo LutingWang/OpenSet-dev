@@ -37,6 +37,9 @@ class ZSLDataset:
         assert len(proposals) == len(self.data_infos)  # len(self) is set manually when debugging
         return proposals
 
+    # def __getitem__(self, *args, **kwargs) -> Any:
+    #     return super().__getitem__(*args, **kwargs)
+
     def evaluate(self, *args, **kwargs) -> Any:
         kwargs.pop('gpu_collect', None)
         kwargs.pop('tmpdir', None)

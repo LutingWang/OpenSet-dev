@@ -15,4 +15,3 @@ model = dict(
     ),
 )
 # optimizer = dict(lr=0.005, weight_decay=0.000025)
-evaluation = dict(interval=2)

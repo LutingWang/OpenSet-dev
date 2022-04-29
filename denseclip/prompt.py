@@ -1,4 +1,4 @@
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Union
 
 import clip
 import clip.model
@@ -6,6 +6,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from mmcv import ConfigDict
+from mmcv.runner import BaseModule
 from mmdet.core import AssignResult, MaxIoUAssigner, bbox2result, multiclass_nms
 from mmdet.models import DETECTORS, BaseDetector
 
@@ -20,7 +21,13 @@ class PromptTrainer(BaseDetector):
     CLASSES: Tuple[str]
     distiller: CLIPDistiller
     
-    def __init__(self, *args, num_classes: int, test_cfg: ConfigDict, **kwargs):
+    def __init__(
+        self, 
+        *args, 
+        num_classes: int, 
+        test_cfg: ConfigDict, 
+        **kwargs,
+    ):
         self._num_classes = num_classes
         self._test_cfg = test_cfg
 
@@ -54,7 +61,7 @@ class PromptTrainer(BaseDetector):
         self._tokens = nn.Parameter(tokens, requires_grad=False)
 
     def init_weights(self):
-        print('init weights')
+        pass
 
     def extract_feat(self, bbox_embeddings: torch.Tensor) -> torch.Tensor:
         label_embeddings = self.distiller.teacher.encode_text(self._tokens)
@@ -110,3 +117,42 @@ class PromptTrainer(BaseDetector):
         neg_inds = labels == -1
         loss_neg = -F.log_softmax(logits[neg_inds][:, self._seen_ids], dim=1).sum() / len(self.CLASSES)
         return dict(loss_pos=loss_pos / len(img_metas), loss_neg=loss_neg / len(img_metas))
+
+
+@DETECTORS.register_module()
+class ClassEmbeddingsTester(BaseModule):
+    CLASSES: Tuple[str]
+    
+    def __init__(
+        self, 
+        *args, 
+        class_embeddings: Union[str, torch.Tensor], 
+        test_cfg: ConfigDict, 
+        **kwargs,
+    ):
+        super().__init__()
+        if isinstance(class_embeddings, str):
+            class_embeddings = torch.load(class_embeddings, map_location='cpu')
+        classifier = Classifier(0.01)
+        classifier.set_weight(class_embeddings.float(), norm=False)
+        self._test_cfg = test_cfg
+        self._num_classes = class_embeddings.shape[0]
+        self._classifier = classifier
+
+    def forward(
+        self, 
+        *args,
+        bboxes: List[torch.Tensor],
+        bbox_embeddings: List[torch.Tensor],
+        **kwargs,
+    ) -> list:
+        bbox_results = []
+        for bbox, bbox_embedding in zip(bboxes, bbox_embeddings):
+            logit: torch.Tensor = self._classifier(bbox_embedding, norm=False)
+            logit = logit.softmax(-1)
+            bbox, label = multiclass_nms(
+                bbox, logit, self._test_cfg.score_thr, self._test_cfg.nms, self._test_cfg.max_per_img,
+            )
+            bbox_result = bbox2result(bbox, label, self._num_classes)
+            bbox_results.append(bbox_result)
+        return bbox_results

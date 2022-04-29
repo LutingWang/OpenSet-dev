@@ -15,7 +15,7 @@ from mmdet.models import DETECTORS, RetinaHead, SingleStageDetector
 from .datasets import CocoGZSLDataset
 from .model import CLIPResNetWithAttention, ContextDecoder, RetinaRPNHead, Classifier
 from .prior_generator import AnchorGeneratorWithPos
-from .utils import SimpleTokenizer, encode_bboxes
+# from .utils import SimpleTokenizer, encode_bboxes
 
 
 class VpeForwardPreHook(nn.Module):
@@ -45,7 +45,7 @@ class PromptFrowardHook(nn.Module):
         super().__init__()
         self._prompt_length = prompt_length
         self._prompt = nn.Parameter(torch.randn(prompt_length, embedding_dim))
-        nn.init.trunc_normal_(self._prompt)
+        nn.init.trunc_normal_(self._prompt, std=0.02)
 
     def register(self, module: nn.Module):
         module.register_forward_hook(self)

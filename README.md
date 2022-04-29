@@ -51,6 +51,12 @@ python tools/class_embeddings.py vild --dataset lvis_v1 --pretrained "ViT-B/32"
 
 ```shell
 sh tools/odps_train.sh debug configs/feature_extractor/proposal_feature_extractor.py 8 --seed 3407 --cfg-options log_config.interval=4
+
+# with resize and flip, emperically better
+sh tools/odps_train.sh debug configs/feature_extractor/resized_proposal_feature_extractor.py 8 --seed 3407 --cfg-options log_config.interval=4
+
+# validation dataset only
+sh tools/odps_test.sh debug configs/feature_extractor/resized_proposal_feature_extractor.py 8 data/null.pth --eval bbox
 ```
 
 ## Directory Tree
@@ -103,6 +109,15 @@ DenseCLIP/data
     │   └── rpn_r101_fpn_lvis_val.pkl (5k)
     ├── train2017 -> coco/train2017
     └── val2017 -> coco/val2017
+```
+
+# Prompt
+
+```shell
+sh tools/odps_train.sh prompt configs/prompt/prompt.py --seed 3407
+
+# test class embeddings
+sh tools/odps_train.sh configs/prompt/class_embeddings_tester.py 8 data/null.pth --eval bbox
 ```
 
 # ViLD*
