@@ -2,6 +2,23 @@
 
 set -x
 
+grep -r "ipdb" \
+    --exclude-dir .git \
+    --exclude-dir data \
+    --exclude-dir local_data \
+    --exclude-dir pretrained \
+    --exclude-dir work_dirs \
+    --exclude ./tools/odps_train.sh \
+    --exclude ./tools/odps_test.sh \
+    --exclude Pipfile \
+    --exclude Pipfile.lock \
+    --exclude requirements.txt \
+    .
+if [[ $? -eq 0 ]]; then
+    echo "ipdb is not allowed in this repo"
+    exit 1
+fi
+
 PARTITION=$1
 JOB_NAME=$2
 CONFIG=$3
