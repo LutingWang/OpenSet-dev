@@ -13,5 +13,5 @@ data = dict(
     test=dict(test_mode=False, pipeline=pipeline),
 )
 model = dict(
-    data_root='data/lvis_v1/gt_embeddings5/',
+    data_root='data/lvis_v1/gt_embeddings6/',
 )

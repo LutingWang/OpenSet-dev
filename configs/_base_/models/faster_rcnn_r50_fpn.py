@@ -82,7 +82,7 @@ model = dict(
             nms_pre=2000,
             max_per_img=1000,
             nms=dict(type='nms', iou_threshold=0.7),
-            min_bbox_size=0),
+            min_bbox_size=0.001),
         rcnn=dict(
             assigner=dict(
                 type='MaxIoUAssigner',
@@ -104,7 +104,7 @@ model = dict(
             nms_pre=1000,
             max_per_img=1000,
             nms=dict(type='nms', iou_threshold=0.7),
-            min_bbox_size=0),
+            min_bbox_size=0.001),
         rcnn=dict(
             score_thr=0.05,
             nms=dict(type='nms', iou_threshold=0.5),

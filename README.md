@@ -7,6 +7,10 @@ git clone git@github.com:lvis-dataset/lvis-api.git
 git clone git@github.com:open-mmlab/mmdetection.git
 GIT_LFS_SKIP_SMUDGE=1 git clone git@github.com:LutingWang/todd.git
 
+cd mmdetection
+git checkout 6b87ac22b8d9dea8cc28b9ce84909e6c311e6268
+cd
+
 git clone git@gitlab.alibaba-inc.com:wangluting.wlt/openset_detection.git
 cd openset_detection
 ln -s ${HOME}/CLIP/clip .

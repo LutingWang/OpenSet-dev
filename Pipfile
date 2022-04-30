@@ -30,6 +30,7 @@ todd = {editable = true, path = "./../todd"}
 clip = {path = "./../CLIP"}
 lmdb = "*"
 pandas = "*"
+plotly = "*"
 
 [dev-packages]
 

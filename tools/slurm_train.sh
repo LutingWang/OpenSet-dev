@@ -10,11 +10,13 @@ grep -r "ipdb" \
     --exclude-dir work_dirs \
     --exclude ./tools/odps_train.sh \
     --exclude ./tools/odps_test.sh \
+    --exclude ./tools/slurm_train.sh \
+    --exclude ./tools/slurm_test.sh \
     --exclude Pipfile \
     --exclude Pipfile.lock \
     --exclude requirements.txt \
     .
-if [[ $? -eq 0 ]]; then
+if [[ ${DEBUG} == "" && $? -eq 0 ]]; then
     echo "ipdb is not allowed in this repo"
     exit 1
 fi
@@ -28,6 +30,9 @@ GPUS_PER_NODE=${GPUS_PER_NODE:-8}
 CPUS_PER_TASK=${CPUS_PER_TASK:-5}
 SRUN_ARGS=${SRUN_ARGS:-""}
 PY_ARGS=${@:5}
+if [[ ${DEBUG} != "" ]]; then
+    PY_ARGS="${PY_ARGS} --debug"
+fi
 
 PYTHONPATH="$(dirname $0)/..":$PYTHONPATH \
 srun -p ${PARTITION} \

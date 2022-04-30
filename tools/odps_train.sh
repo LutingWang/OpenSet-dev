@@ -10,6 +10,8 @@ grep -r "ipdb" \
     --exclude-dir work_dirs \
     --exclude ./tools/odps_train.sh \
     --exclude ./tools/odps_test.sh \
+    --exclude ./tools/slurm_train.sh \
+    --exclude ./tools/slurm_test.sh \
     --exclude Pipfile \
     --exclude Pipfile.lock \
     --exclude requirements.txt \
