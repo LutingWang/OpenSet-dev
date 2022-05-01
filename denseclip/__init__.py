@@ -4,6 +4,7 @@ from . import datasets
 from . import utils
 from .clip import CLIPDetector
 from .feature_extractor import CLIPFeatureExtractor
+from .glip import GLIP
 from .denseclip import DenseCLIP_RetinaNet
 from .model import CLIPResNet, CLIPResNetWithoutAttention, CLIPResNetWithAttention, RetinaRPNHead
 from .prior_generator import AnchorGeneratorWithPos

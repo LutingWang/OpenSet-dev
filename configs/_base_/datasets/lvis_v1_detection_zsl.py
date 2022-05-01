@@ -7,7 +7,9 @@ img_norm_cfg = dict(
     mean=[123.675, 116.28, 103.53], std=[58.395, 57.12, 57.375], to_rgb=True)
 train_pipeline = [
     dict(type='LoadImageFromFile'),
-    dict(type='LoadPthEmbeddings', data_root='data/lvis_v1/proposal_embeddings4/'),
+    # dict(type='LoadPthEmbeddings', data_root='data/lvis_v1/proposal_embeddings4/'),
+    # dict(type='LoadZipEmbeddings', data_root='data/lvis_v1/proposal_embeddings.zip/data/lvis_clip_image_embedding/', task_name='train2017'),
+    dict(type='LoadPthEmbeddings', data_root='data/lvis_v1/proposal_embeddings10/', min_bbox_area=32*32, detpro=True),
     dict(type='LoadAnnotations', with_bbox=True),
     dict(
         type='Resize',
@@ -27,8 +29,9 @@ train_pipeline = [
 data = dict(
     train=dict(dataset=dict(
         type='LVISV1ZSLSeenDataset',
-        ann_file=data_root + 'annotations/lvis_v1_train_866_337_4.json',
         pipeline=train_pipeline,
+        ann_file=data_root + 'annotations/lvis_v1_train_866_337_4.json',
+        proposal_file=data_root + 'proposals/rpn_r101_fpn_lvis_v1_train.pkl',
     )),
     val=dict(type='LVISV1GZSLDataset'),
     test=dict(type='LVISV1GZSLDataset'))

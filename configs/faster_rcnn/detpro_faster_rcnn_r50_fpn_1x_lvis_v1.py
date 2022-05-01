@@ -1,7 +1,7 @@
 _base_ = [
-    '../_base_/models/lvis_mask_rcnn_r50_fpn.py',
-    '../_base_/datasets/lvis_v1_instance_zsl.py',
-    '../_base_/schedules/schedule_20e_cos.py', 
+    '../_base_/models/lvis_faster_rcnn_r50_fpn.py',
+    '../_base_/datasets/lvis_v1_detection_zsl.py',
+    '../_base_/schedules/schedule_1x_cos.py', 
     '../_base_/default_runtime.py',
 ]
 
@@ -17,7 +17,6 @@ model = dict(
             #     _delete_=True, type='KLDivLossZSL', T=1, loss_weight=1000,
             # ),
         ),
-        mask_head=dict(num_classes=1203),
     ),
 )
 # optimizer = dict(lr=0.005, weight_decay=0.000025)
