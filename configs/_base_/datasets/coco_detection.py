@@ -8,7 +8,7 @@ train_pipeline = [
     dict(type='LoadAnnotations', with_bbox=True),
     dict(
         type='Resize',
-        img_scale=[(1333, 640), (1333, 800)],
+        img_scale=[(1333, 480), (1333, 800)],
         multiscale_mode='range',
         keep_ratio=True),
     dict(type='RandomFlip', flip_ratio=0.5),
@@ -34,7 +34,7 @@ test_pipeline = [
 ]
 data = dict(
     samples_per_gpu=2,
-    workers_per_gpu=6,
+    workers_per_gpu=10,
     train=dict(
         type=dataset_type,
         ann_file=data_root + 'annotations/instances_train2017.json',

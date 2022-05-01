@@ -243,12 +243,12 @@ class ViLDEnsembleRoIHead(StandardRoIHead):
         unexpected_keys: List[str], 
         error_msgs: List[str],
     ):
-        # if not any('_ensemble_head' in k for k in state_dict):
-        #     state_dict.update({
-        #         '_ensemble_head'.join(k.split('bbox_head', 1)): v 
-        #         for k, v in state_dict.items() 
-        #         if k.startswith(prefix + 'bbox_head.')
-        #     })
+        if not any('_ensemble_head' in k for k in state_dict):
+            state_dict.update({
+                '_ensemble_head'.join(k.split('bbox_head', 1)): v 
+                for k, v in state_dict.items() 
+                if k.startswith(prefix + 'bbox_head.')
+            })
         super()._load_from_state_dict(
             state_dict, prefix, local_metadata, strict, missing_keys, unexpected_keys, error_msgs,
         )

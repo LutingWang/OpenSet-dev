@@ -1,26 +1,51 @@
 from pathlib import Path
+from typing import Optional
 
 from mmdet.datasets import PIPELINES
 from todd.datasets import build_access_layer
+from todd.utils import BBoxes
 
 from ..utils import has_debug_flag
 
 
 @PIPELINES.register_module()
 class LoadPthEmbeddings:
-    def __init__(self, data_root: str, task_name: str = 'train'):
+    def __init__(
+        self, 
+        data_root: str, 
+        task_name: str = 'train', 
+        min_bbox_area: Optional[int] = None,
+        detpro: bool = False,
+    ):
         self._pth_access_layer =  build_access_layer(dict(
             type='PthAccessLayer',
             data_root=data_root,
             task_name=task_name,
         ))
+        self._min_bbox_area = min_bbox_area
+        self._detpro = detpro
 
     def __call__(self, results: dict) -> dict:
-        id_ = results['img_info']['id']
-        bboxes, bbox_embeddings = self._pth_access_layer[id_]
+        if self._detpro:
+            id_ = Path(results['img_info']['filename']).stem
+            if has_debug_flag(1):
+                id_ = '000000000030'
+            bboxes = results['proposals'][:, :4]
+            bbox_embeddings = self._pth_access_layer[id_].numpy()
+        else:
+            id_ = results['img_info']['id']
+            bboxes, bbox_embeddings = self._pth_access_layer[id_]
+            bboxes = bboxes.numpy()
+            bbox_embeddings = bbox_embeddings.numpy()
+        if self._min_bbox_area is not None:
+            valid_indices = BBoxes(bboxes).areas > self._min_bbox_area
+            bboxes = bboxes[valid_indices]
+            bbox_embeddings = bbox_embeddings[valid_indices]
+        if has_debug_flag(1):
+            bbox_embeddings = bbox_embeddings[:bboxes.shape[0]]
         results['bbox_fields'].append('bboxes')
-        results['bboxes'] = bboxes.numpy()
-        results['bbox_embeddings'] = bbox_embeddings.numpy()
+        results['bboxes'] = bboxes
+        results['bbox_embeddings'] = bbox_embeddings
         return results
 
 
