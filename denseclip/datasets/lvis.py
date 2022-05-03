@@ -180,9 +180,14 @@ class LVISV1GZSLDataset(ZSLDataset, LVISV1Dataset):
 
 @DATASETS.register_module()
 class LVISV1PromptDataset(LVISV1GZSLDataset):
+    def __init__(self, *args, image2dc: bool = False, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._image2dc = image2dc
+
     def __getitem__(self, *args, **kwargs) -> dict:
         item = super().__getitem__(*args, **kwargs)
         item['img'] = torch.zeros([])
-        if self.test_mode:
+        if self._image2dc:
             item['img'] = DC(item['img'])
+        print(self.data_infos[args[0]])
         return item

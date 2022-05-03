@@ -5,7 +5,7 @@ _base_ = [
 ]
 
 dataset_type='LVISV1PromptDataset'
-embeddings_root = 'data/lvis_v1/proposal_embeddings4/'
+embeddings_root = 'data/lvis_v1/proposal_embeddings7/'
 train_pipeline = [
     dict(type='LoadPthEmbeddings', data_root=embeddings_root),
     dict(type='LoadAnnotations', with_bbox=True),
@@ -32,10 +32,14 @@ data = dict(
         pipeline=train_pipeline)),
     val=dict(
         type=dataset_type,
-        pipeline=test_pipeline),
+        test_mode=False,
+        image2dc=True,
+        pipeline=train_pipeline),
     test=dict(
         type=dataset_type,
-        pipeline=test_pipeline))
+        test_mode=False,
+        image2dc=True,
+        pipeline=train_pipeline))
 model = dict(
     type='PromptTrainer',
     backbone=dict(),

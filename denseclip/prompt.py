@@ -75,13 +75,27 @@ class PromptTrainer(BaseDetector):
         self, 
         img: torch.Tensor,
         img_metas: List[dict],
+        gt_bboxes: List[torch.Tensor],
+        gt_labels: List[torch.Tensor],
         bboxes: List[torch.Tensor],
         bbox_embeddings: List[torch.Tensor],
         **kwargs,
     ) -> list:
         bbox_results = []
-        for bbox, bbox_embedding in zip(bboxes, bbox_embeddings):
+        for bbox, bbox_embedding, gt_bbox, gt_label in zip(bboxes, bbox_embeddings, gt_bboxes, gt_labels):
+            # assign_result: AssignResult = self._bbox_assigner.assign(
+            #     bbox, gt_bbox, gt_bboxes_ignore=None, gt_labels=gt_label,
+            # )
+            # valid = torch.logical_and(
+            #     assign_result.max_overlaps >= 0.1, 
+            #     assign_result.labels != -1,
+            # )
+            # bbox = bbox[valid]
+            # bbox_embedding = bbox_embedding[valid]
+            # label = assign_result.labels[valid]
             logit = self.extract_feat(bbox_embedding).softmax(-1)
+            # print(torch.argmax(logit, dim = -1).eq(label).sum(), label.numel())
+            # print(logit.float().topk(5)[1].eq(label[:,None]).sum(), label.numel())
             bbox, label = multiclass_nms(
                 bbox, logit, self._test_cfg.score_thr, self._test_cfg.nms, self._test_cfg.max_per_img,
             )

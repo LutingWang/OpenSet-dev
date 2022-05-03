@@ -12,8 +12,10 @@ import todd.utils
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from mmcv import ConfigDict
 from mmcv.parallel import DataContainer as DC
 from mmdet.datasets import DATASETS, PIPELINES
+from mmdet.datasets.pipelines import Compose
 from mmdet.models import DETECTORS, BaseDetector
 from todd.utils import BBoxes
 
@@ -22,25 +24,12 @@ from .utils import has_debug_flag
 
 @PIPELINES.register_module()
 class LoadImageFromRegions:
-    def __init__(self, n_px: int):
+    def __init__(self, n_px: int, transforms: List[ConfigDict] = None):
         self._n_px = n_px
+        self._transforms = None if transforms is None else Compose(transforms)
         self._preprocess = clip.clip._transform(n_px)
 
     def __call__(self, results: dict) -> dict:
-        if 'img_fields' not in results or len(results['img_fields']) == 0:
-            filename = os.path.join(
-                results['img_prefix'], results['img_info']['filename'],
-            )
-            image = Image.open(filename)
-        elif len(results['img_fields']) == 1:
-            assert results['img_fields'][0] == 'img', results['img_fields']
-            image: np.ndarray = results['img']
-            image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-            image: Image.Image = Image.fromarray(image)
-        else:
-            raise ValueError(f"Unexpected img_fields: {results['img_fields']}")
-        results['img_fields'] = ['img']
-
         if len(results['bbox_fields']) == 1:
             assert results['bbox_fields'][0] == 'proposals', results['bbox_fields']
             bbox_field = 'proposals'
@@ -50,26 +39,46 @@ class LoadImageFromRegions:
             bbox_field = 'gt_bboxes'
         else:
             raise ValueError(f"Unexpected bbox_fields: {results['bbox_fields']}")
-        results['bbox_fields'] = ['bboxes']
 
         bboxes = results[bbox_field]
         if has_debug_flag(3):
             bboxes = bboxes[:5]
         bboxes = BBoxes(torch.as_tensor(bboxes))
         # bboxes = bboxes[bboxes.areas > 32 * 32]
-        results['bboxes'] = DC(bboxes.to_tensor())
 
         if bboxes.empty:
             regions = torch.zeros(0, 3, self._n_px, self._n_px)
         else:
-            bboxes15 = bboxes.expand(ratio=1.5, image_shape=(image.height, image.width))
-            bboxes = bboxes + bboxes15
+            if self._transforms is None:
+                bboxes_ = bboxes
+            else:
+                results = self._transforms(results)
+                bboxes_ = BBoxes(torch.as_tensor(results[bbox_field]))
+
+            if 'img_fields' not in results or len(results['img_fields']) == 0:
+                filename = os.path.join(
+                    results['img_prefix'], results['img_info']['filename'],
+                )
+                image = Image.open(filename)
+            elif len(results['img_fields']) == 1:
+                assert results['img_fields'][0] == 'img', results['img_fields']
+                image: np.ndarray = results['img']
+                image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+                image: Image.Image = Image.fromarray(image)
+            else:
+                raise ValueError(f"Unexpected img_fields: {results['img_fields']}")
+
+            bboxes_15 = bboxes_.expand(ratio=1.5, image_shape=(image.height, image.width))
+            bboxes_ = bboxes_ + bboxes_15
             regions = torch.stack([
                 self._preprocess(image.crop(bbox)) 
-                for bbox in bboxes.round().to_tensor().int().tolist()
+                for bbox in bboxes_.round().to_tensor().int().tolist()
             ])
         image.close()
         results['img'] = DC(regions)
+        results['bboxes'] = DC(bboxes.to_tensor())
+        results['img_fields'] = ['img']
+        results['bbox_fields'] = ['bboxes']
 
         results['id'] = results['img_info']['id']
         return results

@@ -23,5 +23,5 @@ data = dict(
     ),
 )
 model = dict(
-    data_root='data/lvis_v1/proposal_embeddings6/',
+    data_root='data/lvis_v1/proposal_embeddings7/',
 )
