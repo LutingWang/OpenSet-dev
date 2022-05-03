@@ -1,6 +1,7 @@
 from typing import Any, Dict, List, Optional, Tuple
 
 import einops
+import clip.clip
 import clip.model
 import todd
 import torch
@@ -57,7 +58,12 @@ class PromptFrowardHook(nn.Module):
 class CLIPDistiller(todd.distillers.SingleTeacherDistiller):
     teacher: clip.model.CLIP
 
-    def __init__(self, *args, teacher_cfg: ConfigDict, **kwargs):
+    def __init__(
+        self, 
+        *args, 
+        teacher_cfg: ConfigDict, 
+        **kwargs,
+    ):
         self._teacher_cfg = teacher_cfg
 
         teacher = torch.jit.load(teacher_cfg.pretrained, map_location='cpu')
@@ -70,7 +76,7 @@ class CLIPDistiller(todd.distillers.SingleTeacherDistiller):
             self.teacher.transformer = None
             self.teacher.ln_final = None
             self.teacher.text_projection = None
-        else:
+        elif teacher_cfg.get('prompt_hook', True):
             self._prompt_forward_hook = PromptFrowardHook(
                 prompt_length=teacher_cfg.prompt_length, 
                 embedding_dim=self.teacher.token_embedding.embedding_dim,
@@ -78,15 +84,19 @@ class CLIPDistiller(todd.distillers.SingleTeacherDistiller):
             self._prompt_forward_hook.register(self.teacher.token_embedding)
 
         if teacher_cfg.get('text_only', False):
+            assert not teacher_cfg.get('with_preprocess')
             delattr(self.teacher, 'visual')
             self.teacher.visual = EasyDict(
                 conv1=self.teacher.token_embedding,  # hack self.teacher.dtype
             )
         else:
-            self._vpe_forward_pre_hook = VpeForwardPreHook(
-                vpe=self.teacher.visual.attnpool.positional_embedding, 
-            )
-            self._vpe_forward_pre_hook.register(self.teacher.visual.attnpool)
+            if teacher_cfg.get('with_preprocess', False):
+                self._preprocess = clip.clip._transform(self.teacher.visual.input_resolution)
+            if teacher_cfg.get('vpe_hook', True):
+                self._vpe_forward_pre_hook = VpeForwardPreHook(
+                    vpe=self.teacher.visual.attnpool.positional_embedding, 
+                )
+                self._vpe_forward_pre_hook.register(self.teacher.visual.attnpool)
 
     def customize_teacher(self, teacher: nn.Module) -> nn.Module:
         state_dict = teacher.state_dict()

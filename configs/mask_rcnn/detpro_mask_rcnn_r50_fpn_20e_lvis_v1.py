@@ -6,9 +6,9 @@ _base_ = [
 ]
 
 model = dict(
-    backbone=dict(
-        frozen_stages=4,
-    ),
+    # backbone=dict(
+    #     frozen_stages=4,
+    # ),
     roi_head=dict(
         bbox_head=dict(
             class_embeddings='data/lvis_v1/prompt/detpro_ViT-B-32.pt',

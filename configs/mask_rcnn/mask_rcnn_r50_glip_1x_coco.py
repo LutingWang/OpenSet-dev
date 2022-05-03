@@ -3,6 +3,7 @@ _base_ = [
     '../_base_/datasets/coco_instance.py',
     '../_base_/schedules/schedule_1x.py', '../_base_/default_runtime.py'
 ]
+
 model = dict(
     type='MaskRCNN',
     neck=[
@@ -18,6 +19,3 @@ model = dict(
             refine_level=3,
         )
     ])
-data = dict(
-    samples_per_gpu=1,
-)

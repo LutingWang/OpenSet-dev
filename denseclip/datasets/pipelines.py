@@ -1,7 +1,12 @@
 from pathlib import Path
 from typing import Optional
 
+import clip.clip
+import cv2
+from PIL import Image
+from mmcv.parallel import DataContainer as DC
 from mmdet.datasets import PIPELINES
+from mmdet.datasets.pipelines.loading import LoadImageFromFile
 from todd.datasets import build_access_layer
 from todd.utils import BBoxes
 
@@ -92,4 +97,19 @@ class LoadUnzippedEmbeddings:
         results['bbox_fields'].append('bboxes')
         results['bboxes'] = bboxes
         results['bbox_embeddings'] = bbox_embeddings
+        return results
+
+
+@PIPELINES.register_module()
+class LoadRawImageFromFile(LoadImageFromFile):
+    def __init__(self, *args, n_px: int, **kwargs):
+        super().__init__()
+        self._preprocess = clip.clip._transform(n_px)
+
+    def __call__(self, results: dict) -> dict:
+        results = super().__call__(results)
+        raw_image = cv2.cvtColor(results['img'], cv2.COLOR_BGR2RGB)
+        raw_image = Image.fromarray(raw_image)
+        raw_image = self._preprocess(raw_image)
+        results['raw_image'] = raw_image
         return results

@@ -98,7 +98,7 @@ vild_templates = [
 def get_dataset_class(dataset: str) -> CustomDataset:
     dataset_class_mapping = {
         'coco': 'CocoDataset',
-        'lvis_v1': 'LVISV1Dataset',
+        'lvis_v1': 'LVISV1GZSLDataset',
     }
     if dataset not in dataset_class_mapping:
         raise ValueError(f'Unknown dataset: {dataset}')
