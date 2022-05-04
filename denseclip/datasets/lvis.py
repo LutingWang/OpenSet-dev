@@ -5,12 +5,13 @@ import torch
 import lvis  # fix logging format
 from mmcv.parallel import DataContainer as DC
 from mmdet.datasets import LVISV1Dataset, DATASETS
-from typing import Any, Dict, Iterable, List, Tuple
+from typing import Any, Dict, Iterable, Tuple
 
 from ..utils import has_debug_flag
 from .zsl import ZSLDataset
 
 
+# fix logging format
 logger = logging.getLogger()
 for handler in logger.handlers:
     logger.removeHandler(handler)
@@ -154,8 +155,33 @@ def correct_classes(classes: Iterable[str]) -> Tuple[str]:
     return tuple(classes)
 
 
+class FilterImagesMixin:
+    def _filter_imgs(self, *args, **kwargs) -> Any:
+        white_list = [
+             41257,  55879,  56289,  64516,  64797,  76918, 112820, 129175, 131207, 137677, 
+            139952, 141063, 156128, 163803, 173484, 182734, 184606, 191381, 202797, 204785, 
+            207289, 219820, 245153, 249429, 251249, 261251, 283217, 287027, 326820, 361332, 
+            365325, 378541, 383066, 388616, 416372, 429758, 431410, 447778, 457131, 482848, 
+            490850, 519929, 522527, 557254, 577640, 579997,
+        ]
+        if has_debug_flag(0):
+            white_list = [37777, 87038]
+        for i, image_id in enumerate(white_list, start=1):
+            self.coco.anns[-i] = dict(image_id=image_id)
+        self.cat_ids.append(-1)
+        self.coco.cat_img_map[-1] = white_list
+
+        results = super()._filter_imgs(*args, **kwargs)
+
+        self.coco.cat_img_map.pop(-1)
+        self.cat_ids.pop(-1)
+        for i in range(1, len(white_list) + 1):
+            self.coco.anns.pop(-i)
+        return results
+
+
 @DATASETS.register_module()
-class LVISV1ZSLSeenDataset(ZSLDataset, LVISV1Dataset):
+class LVISV1ZSLSeenDataset(FilterImagesMixin, ZSLDataset, LVISV1Dataset):
     CLASSES = correct_classes(LVISV1Dataset.CLASSES[i] for i in V1_SEEN_866_337)
 
     def _parse_ann_info(self, *args, **kwargs) -> Dict[str, Any]:
@@ -169,12 +195,12 @@ class LVISV1ZSLSeenDataset(ZSLDataset, LVISV1Dataset):
 
 
 @DATASETS.register_module()
-class LVISV1ZSLUnseenDataset(ZSLDataset, LVISV1Dataset):
+class LVISV1ZSLUnseenDataset(FilterImagesMixin, ZSLDataset, LVISV1Dataset):
     CLASSES = correct_classes(LVISV1Dataset.CLASSES[i] for i in V1_UNSEEN_866_337)
 
 
 @DATASETS.register_module()
-class LVISV1GZSLDataset(ZSLDataset, LVISV1Dataset):
+class LVISV1GZSLDataset(FilterImagesMixin, ZSLDataset, LVISV1Dataset):
     CLASSES = correct_classes(LVISV1Dataset.CLASSES)
 
 
