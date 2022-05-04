@@ -25,7 +25,9 @@ train_pipeline = [
         fields=[dict(key='bboxes'), dict(key='bbox_embeddings')]),
     dict(type='Collect', keys=['img', 'raw_image', 'gt_bboxes', 'gt_labels', 'gt_masks', 'bboxes', 'bbox_embeddings']),
 ]
-data = dict(train=dict(dataset=dict(pipeline=train_pipeline)))
+data = dict(
+    samples_per_gpu=1,
+    train=dict(dataset=dict(pipeline=train_pipeline)))
 model = dict(
     type='GLIPMaskRCNN',
     glip_neck= dict(
@@ -33,13 +35,18 @@ model = dict(
         in_channels=256,
         num_levels=5,
         refine_level=2,
+        refine=dict(
+            num_layers=6, 
+            class_embeddings='data/lvis_v1/prompt/detpro_ViT-B-32.pt', 
+            kappa=35, 
+        ),
     ),
     distiller=dict(
-        teacher_cfg=dict(
-            pretrained='pretrained/clip/ViT-B-32.pt',
-            image_only=True,
-            with_preprocess=False,
-            vpe_hook=False),
+        # teacher_cfg=dict(
+        #     pretrained='pretrained/clip/ViT-B-32.pt',
+        #     image_only=True,
+        #     with_preprocess=False,
+        #     vpe_hook=False),
         student_hooks=dict(image_features=dict(
             type='StandardHook', path='_glip_neck.refine._adapter')),
         losses=dict(image_kd=dict(
@@ -53,4 +60,3 @@ model = dict(
             iter_=200)],
     )
 )
-data = dict(samples_per_gpu=1)

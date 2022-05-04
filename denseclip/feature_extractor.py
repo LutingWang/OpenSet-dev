@@ -23,6 +23,34 @@ from .utils import has_debug_flag
 
 
 @PIPELINES.register_module()
+class LoadImageFromCLIP:
+    def __init__(self, n_px: int):
+        self._n_px = n_px
+        self._preprocess = clip.clip._transform(n_px)
+
+    def __call__(self, results: dict) -> dict:
+        if 'img_fields' not in results or len(results['img_fields']) == 0:
+            filename = os.path.join(
+                results['img_prefix'], results['img_info']['filename'],
+            )
+            image = Image.open(filename)
+        elif len(results['img_fields']) == 1:
+            assert results['img_fields'][0] == 'img', results['img_fields']
+            image: np.ndarray = results['img']
+            image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+            image: Image.Image = Image.fromarray(image)
+        else:
+            raise ValueError(f"Unexpected img_fields: {results['img_fields']}")
+
+        image = self._preprocess(image)
+        results['img'] = DC(image)
+        results['img_fields'] = ['img']
+
+        results['id'] = results['img_info']['id']
+        return results
+
+
+@PIPELINES.register_module()
 class LoadImageFromRegions:
     def __init__(self, n_px: int, transforms: List[ConfigDict] = None):
         self._n_px = n_px
@@ -89,7 +117,7 @@ class CLIPFeatureExtractor(BaseDetector):
     CLASSES: Tuple[str]
 
     def __init__(self, *args, clip_model: str = 'pretrained/clip/RN50.pt', data_root: str, **kwargs):
-        super().__init__()
+        super().__init__(*args, **kwargs)
         model, _ = clip.load(clip_model)
         self._model: clip.model.CLIP = todd.utils.freeze_model(model)
         self._loss = nn.Parameter(torch.zeros([]), requires_grad=True)
@@ -150,3 +178,38 @@ class CLIPFeatureExtractor(BaseDetector):
             np.zeros((0, 5), dtype=np.float32)
         ] * len(self.CLASSES)] * len(img)
         return bbox_results
+
+
+@DETECTORS.register_module()
+class CLIPImageFeatureExtractor(BaseDetector):
+    CLASSES: Tuple[str]
+
+    def __init__(self, *args, clip_model: str = 'pretrained/clip/RN50.pt', data_root: str, **kwargs):
+        super().__init__()
+        model, _ = clip.load(clip_model)
+        self._model: clip.model.CLIP = todd.utils.freeze_model(model)
+        self._writer = todd.datasets.PthAccessLayer(data_root=data_root, task_name='train', readonly=False, exist_ok=True)
+        self._loss = nn.Parameter(torch.zeros([]), requires_grad=True)
+
+    def extract_feat(self, *args, **kwargs):
+        raise NotImplementedError
+
+    def simple_test(self, *args, **kwargs):
+        raise NotImplementedError
+
+    def aug_test(self, *args, **kwargs):
+        raise NotImplementedError
+
+    def forward_train(
+        self, 
+        img: List[torch.Tensor],
+        img_metas: List[dict], 
+        *args, 
+        **kwargs,
+    ):
+        with torch.no_grad():
+            imgs = torch.stack(img)
+            imgs = self._model.encode_image(imgs)
+        for img_meta, img in zip(img_metas, imgs):
+            self._writer[img_meta['id']] = img
+        return dict(loss_zero=self._loss * 0)

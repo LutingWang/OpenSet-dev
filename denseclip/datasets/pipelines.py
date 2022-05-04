@@ -113,3 +113,17 @@ class LoadRawImageFromFile(LoadImageFromFile):
         raw_image = self._preprocess(raw_image)
         results['raw_image'] = raw_image
         return results
+
+
+@PIPELINES.register_module()
+class LoadImageEmbeddingFromFile:
+    def __init__(self, data_root: str):
+        self._pth_access_layer =  build_access_layer(dict(
+            type='PthAccessLayer',
+            data_root=data_root,
+            task_name='train',
+        ))
+
+    def __call__(self, results: dict) -> dict:
+        results['image_embeddings'] = self._pth_access_layer[results['img_info']['id']]
+        return results

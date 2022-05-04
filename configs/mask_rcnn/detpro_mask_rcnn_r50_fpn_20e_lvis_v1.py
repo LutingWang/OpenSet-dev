@@ -1,7 +1,7 @@
 _base_ = [
     '../_base_/models/lvis_mask_rcnn_r50_fpn.py',
     '../_base_/datasets/lvis_v1_instance_zsl.py',
-    '../_base_/schedules/schedule_20e_cos.py', 
+    '../_base_/schedules/schedule_20e.py', 
     '../_base_/default_runtime.py',
 ]
 

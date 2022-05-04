@@ -63,6 +63,12 @@ sh tools/odps_train.sh debug configs/feature_extractor/resized_proposal_feature_
 sh tools/odps_test.sh debug configs/feature_extractor/resized_proposal_feature_extractor.py 8 data/null.pth --eval bbox
 ```
 
+## Generate Image Embeddings
+
+```shell
+sh tools/odps_train.sh debug configs/feature_extractor/image_feature_extractor.py 8 --seed 3407 --no-validate
+```
+
 ## Directory Tree
 
 Before
