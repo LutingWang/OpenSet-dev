@@ -251,18 +251,17 @@ class GLIPNeck(BFP):
         )
 
 
-class GLIPMixin(TwoStageDetector):
+class ClassEmbeddingsMixin(TwoStageDetector):
     def __init__(
         self, 
         *args, 
-        glip_neck: ConfigDict, 
         class_embeddings: str = 'data/lvis_v1/prompt/detpro_ViT-B-32.pt', 
         **kwargs,
     ):
+        super().__init__(*args, **kwargs)
         class_embeddings: torch.Tensor = torch.load(
             class_embeddings, map_location='cpu',
         )
-        glip_neck.refine.embedding_dim = class_embeddings.shape[1]
         if class_embeddings.shape[0] == 80:
             class_embeddings = class_embeddings[COCO_ALL_48_17]
             seen_ids = COCO_INDEX_SEEN_48_17
@@ -270,11 +269,33 @@ class GLIPMixin(TwoStageDetector):
             seen_ids = LVIS_V1_SEEN_866_337
         else:
             raise ValueError(f'Unknown number of classes: {class_embeddings.shape[0]}')
-        self._seen_ids = seen_ids
-        self._seen_ids_mapper = {c: i for i, c in enumerate(seen_ids)}
-        super().__init__(*args, **kwargs)
         self._class_embeddings = nn.Parameter(class_embeddings.float(), requires_grad=False)
+        self._seen_ids = seen_ids
+
+    @property
+    def class_embeddings(self) -> torch.Tensor:
+        if self.training:
+            return self._class_embeddings[self._seen_ids]
+        return self._class_embeddings
+
+
+class GLIPBackboneMixin(ClassEmbeddingsMixin):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        assert isinstance(self.backbone, GLIPResNet), type(self.backbone)
+
+    def extract_feat(self, image: torch.Tensor) -> torch.Tensor:
+        x = self.backbone(image, self.class_embeddings)
+        x = self.neck(x)
+        return x
+
+
+class GLIPNeckMixin(ClassEmbeddingsMixin):
+    def __init__(self, *args, glip_neck: ConfigDict, **kwargs):
+        super().__init__(*args, **kwargs)
+        glip_neck.refine.embedding_dim = self._class_embeddings.shape[1]
         self._glip_neck = GLIPNeck(**glip_neck)
+        self._seen_ids_mapper = {c: i for i, c in enumerate(self._seen_ids)}
 
     def extract_feat(
         self, 
@@ -282,11 +303,7 @@ class GLIPMixin(TwoStageDetector):
         gt_labels: Optional[List[torch.Tensor]] = None, 
         clip_image_features: Optional[torch.Tensor] = None,
     ):
-        class_embeddings = self._class_embeddings
-        if self.training:
-            class_embeddings = class_embeddings[self._seen_ids]
-        x = self.backbone(image, class_embeddings)
-        x = self.neck(x)
+        x = super().extract_feat(image)
         if self.training:
             mil_labels = []
             for gt_label in gt_labels:
@@ -295,7 +312,7 @@ class GLIPMixin(TwoStageDetector):
                 mil_labels.append(mil_label)
         else:
             mil_labels = None
-        return self._glip_neck(x, class_embeddings, mil_labels, clip_image_features)
+        return self._glip_neck(x, self.class_embeddings, mil_labels, clip_image_features)
 
     def forward_train(
         self, 
@@ -320,6 +337,20 @@ class GLIPMixin(TwoStageDetector):
             gt_bboxes_ignore, gt_masks, **kwargs,
         )
         return dict(**rpn_losses, **roi_losses, **glip_losses)
+
+
+class GLIPMixin(GLIPNeckMixin, GLIPBackboneMixin):
+    pass
+
+
+@DETECTORS.register_module()
+class GLIPBackboneFasterRCNN(GLIPBackboneMixin, FasterRCNN):
+    pass
+
+
+@DETECTORS.register_module()
+class GLIPNeckFasterRCNN(GLIPNeckMixin, FasterRCNN):
+    pass
 
 
 @DETECTORS.register_module()
