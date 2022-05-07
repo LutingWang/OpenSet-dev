@@ -7,7 +7,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from mmcv import ConfigDict
 from mmdet.core import bbox2roi
-from mmdet.models import DETECTORS, HEADS, LOSSES, RetinaHead, Shared4Conv1FCBBoxHead, StandardRoIHead, KnowledgeDistillationKLDivLoss
+from mmdet.models import DETECTORS, HEADS, LOSSES, RetinaHead, ConvFCBBoxHead, StandardRoIHead, KnowledgeDistillationKLDivLoss
 
 from .datasets import COCO_INDEX_SEEN_48_17, COCO_ALL_48_17, CocoGZSLDataset, LVIS_V1_SEEN_866_337
 from .model import Classifier
@@ -87,11 +87,12 @@ class KLDivLossZSL(KnowledgeDistillationKLDivLoss):
         )
 
 
-class ViLDBaseBBoxHead(Shared4Conv1FCBBoxHead):
+class ViLDBaseBBoxHead(ConvFCBBoxHead):
     def __init__(
         self, 
         *args, 
         class_embeddings: Union[str, torch.Tensor], 
+        num_shared_convs: int = 4,
         **kwargs,
     ):
         if isinstance(class_embeddings, str):
@@ -106,7 +107,16 @@ class ViLDBaseBBoxHead(Shared4Conv1FCBBoxHead):
             raise ValueError(f'Unknown number of classes: {class_embeddings.shape[0]}')
         self._seen_ids = seen_ids
 
-        super().__init__(*args, **kwargs)
+        super().__init__(
+            *args, 
+            num_shared_convs=num_shared_convs,
+            num_shared_fcs=1,
+            num_cls_convs=0,
+            num_cls_fcs=0,
+            num_reg_convs=0,
+            num_reg_fcs=0,
+            **kwargs,
+        )
         self._unseen_ids = [
             i for i in range(self.num_classes) 
             if i not in seen_ids
@@ -243,12 +253,12 @@ class ViLDEnsembleRoIHead(StandardRoIHead):
         unexpected_keys: List[str], 
         error_msgs: List[str],
     ):
-        if not any('_ensemble_head' in k for k in state_dict):
-            state_dict.update({
-                '_ensemble_head'.join(k.split('bbox_head', 1)): v 
-                for k, v in state_dict.items() 
-                if k.startswith(prefix + 'bbox_head.')
-            })
+        # if not any('_ensemble_head' in k for k in state_dict):
+        #     state_dict.update({
+        #         '_ensemble_head'.join(k.split('bbox_head', 1)): v 
+        #         for k, v in state_dict.items() 
+        #         if k.startswith(prefix + 'bbox_head.')
+        #     })
         super()._load_from_state_dict(
             state_dict, prefix, local_metadata, strict, missing_keys, unexpected_keys, error_msgs,
         )

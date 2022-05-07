@@ -1,5 +1,5 @@
 _base_ = [
-    'detpro_faster_rcnn_r50_fpn_1x_lvis_v1.py',
+    'detpro_faster_rcnn_r50_glip_1x_lvis_v1.py',
 ]
 
 img_norm_cfg = dict(
@@ -9,7 +9,13 @@ train_pipeline = [
     dict(type='LoadImageEmbeddingFromFile', data_root='data/lvis_v1/image_embeddings1'),
     # dict(type='LoadPthEmbeddings', data_root='data/lvis_v1/proposal_embeddings4/'),
     # dict(type='LoadZipEmbeddings', data_root='data/lvis_v1/proposal_embeddings.zip/data/lvis_clip_image_embedding/', task_name='train2017'),
-    dict(type='LoadPthEmbeddings', data_root='data/lvis_v1/proposal_embeddings10/', min_bbox_area=32*32, detpro=True),
+    dict(
+        type='LoadPthEmbeddings', 
+        data_root='data/lvis_v1/proposal_embeddings10/', 
+        min_bbox_area=32*32, 
+        detpro=True, 
+        sampling_ratio=0.5,
+    ),
     dict(type='LoadAnnotations', with_bbox=True),
     dict(
         type='Resize',
@@ -28,27 +34,27 @@ train_pipeline = [
 ]
 data = dict(train=dict(dataset=dict(pipeline=train_pipeline)))
 model = dict(
-    type='GLIPFasterRCNN',
-    class_embeddings='data/lvis_v1/prompt/detpro_ViT-B-32.pt', 
-    backbone=dict(
-        type='GLIPResNet',
-        custom_plugins=dict(
-            in_channels=[256, 512, 1024, 2048],
-            embedding_dim=512,
-            hidden_dim=512,
-        ),
-    ),
+    freeze_neck=True,
     glip_neck= dict(
-        in_channels=256,
-        num_levels=5,
-        refine_level=2,
+        refine_level=3,
         refine=dict(
             mil_classifier=dict(
                 type='DyHeadClassifier',
-                kappa=35, 
                 logits_weight=False,
+                kappa=35,
             ),
-            num_layers=3, 
+            num_layers=2, 
+            image_kd_loss_weight=128,
         ),
     ),
+    # roi_head=dict(ensemble_head=dict(distiller=dict(losses=dict(bbox_kd=dict(weight=128.0))))),
 )
+optimizer = dict(lr=0.02)
+lr_config = dict(
+    _delete_=True,
+    policy='step',
+    warmup='linear',
+    warmup_iters=500,
+    warmup_ratio=0.001,
+    step=[6])
+runner = dict(max_epochs=8)

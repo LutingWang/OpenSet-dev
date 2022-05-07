@@ -1,11 +1,13 @@
 import todd
+from . import mmdet_patch
 
 from . import datasets
 from . import utils
 from .clip import CLIPDetector
 from .feature_extractor import CLIPFeatureExtractor
-from .glip import GLIP
+from .glip import GLIPFasterRCNN
 from .denseclip import DenseCLIP_RetinaNet
+from .mil_classifiers import BaseMILClassifier, DyHeadClassifier, GAPClassifier
 from .model import CLIPResNet, CLIPResNetWithoutAttention, CLIPResNetWithAttention, RetinaRPNHead
 from .prior_generator import AnchorGeneratorWithPos
 from .prompt import PromptTrainer

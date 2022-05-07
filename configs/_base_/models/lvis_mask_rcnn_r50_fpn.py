@@ -12,14 +12,14 @@ model = dict(
         ensemble_head=dict(
             type='ViLDImageBBoxHead',
             distiller=dict(
-                losses=dict(image=dict(
+                losses=dict(bbox_kd=dict(
                     type='L1Loss',
                     tensor_names=['preds', 'targets'],
                     weight=256,
                 )),
                 schedulers=[dict(
                     type='WarmupScheduler',
-                    tensor_names=['loss_image'],
+                    tensor_names=['loss_bbox_kd'],
                     iter_=200,
                 )],
             ),

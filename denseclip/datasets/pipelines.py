@@ -1,5 +1,8 @@
+import math
 from pathlib import Path
-from typing import Optional
+from typing import Optional, cast
+
+import numpy as np
 
 import clip.clip
 import cv2
@@ -21,6 +24,7 @@ class LoadPthEmbeddings:
         task_name: str = 'train', 
         min_bbox_area: Optional[int] = None,
         detpro: bool = False,
+        sampling_ratio: Optional[float] = None,
     ):
         self._pth_access_layer =  build_access_layer(dict(
             type='PthAccessLayer',
@@ -29,6 +33,7 @@ class LoadPthEmbeddings:
         ))
         self._min_bbox_area = min_bbox_area
         self._detpro = detpro
+        self._sampling_ratio = sampling_ratio
 
     def __call__(self, results: dict) -> dict:
         if self._detpro:
@@ -42,10 +47,16 @@ class LoadPthEmbeddings:
             bboxes, bbox_embeddings = self._pth_access_layer[id_]
             bboxes = bboxes.numpy()
             bbox_embeddings = bbox_embeddings.numpy()
+        bboxes = cast(np.ndarray, bboxes)
+        bbox_embeddings = cast(np.ndarray, bbox_embeddings)
         if self._min_bbox_area is not None:
-            valid_indices = BBoxes(bboxes).areas > self._min_bbox_area
-            bboxes = bboxes[valid_indices]
-            bbox_embeddings = bbox_embeddings[valid_indices]
+            indices = BBoxes(bboxes).areas > self._min_bbox_area
+            bboxes = bboxes[indices]
+            bbox_embeddings = bbox_embeddings[indices]
+        if self._sampling_ratio is not None:
+            indices = math.ceil(len(bboxes) * self._sampling_ratio)
+            bboxes = bboxes[:indices]
+            bbox_embeddings = bbox_embeddings[:indices]
         if has_debug_flag(1):
             bbox_embeddings = bbox_embeddings[:bboxes.shape[0]]
         results['bbox_fields'].append('bboxes')

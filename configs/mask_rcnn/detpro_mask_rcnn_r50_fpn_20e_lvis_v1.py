@@ -6,11 +6,16 @@ _base_ = [
 ]
 
 model = dict(
-    # backbone=dict(
-    #     frozen_stages=4,
-    # ),
+    backbone=dict(
+        # frozen_stages=-1,
+        norm_cfg=dict(type='SyncBN'),
+    ),
+    neck=dict(
+        norm_cfg=dict(type='SyncBN'),
+    ),
     roi_head=dict(
         bbox_head=dict(
+            norm_cfg=dict(type='SyncBN'),
             class_embeddings='data/lvis_v1/prompt/detpro_ViT-B-32.pt',
             num_classes=1203,
             # loss_cls=dict(
