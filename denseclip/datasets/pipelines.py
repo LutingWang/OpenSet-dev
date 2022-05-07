@@ -25,6 +25,7 @@ class LoadPthEmbeddings:
         min_bbox_area: Optional[int] = None,
         detpro: bool = False,
         sampling_ratio: Optional[float] = None,
+        with_leading_zeros: bool = ...,
     ):
         self._pth_access_layer =  build_access_layer(dict(
             type='PthAccessLayer',
@@ -34,16 +35,22 @@ class LoadPthEmbeddings:
         self._min_bbox_area = min_bbox_area
         self._detpro = detpro
         self._sampling_ratio = sampling_ratio
+        if with_leading_zeros is ...:
+            with_leading_zeros = detpro
+        self._with_leading_zeros = with_leading_zeros
 
     def __call__(self, results: dict) -> dict:
-        if self._detpro:
+        if self._with_leading_zeros:
             id_ = Path(results['img_info']['filename']).stem
             if has_debug_flag(1):
                 id_ = '000000000030'
-            bboxes = results['proposals'][:, :4]
-            bbox_embeddings = self._pth_access_layer[id_].numpy()
         else:
             id_ = results['img_info']['id']
+        if self._detpro:
+            bbox_embeddings = self._pth_access_layer[id_]
+            bboxes = results['proposals'][:, :4]
+            bbox_embeddings = bbox_embeddings.numpy()
+        else:
             bboxes, bbox_embeddings = self._pth_access_layer[id_]
             bboxes = bboxes.numpy()
             bbox_embeddings = bbox_embeddings.numpy()
