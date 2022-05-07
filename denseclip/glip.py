@@ -308,7 +308,8 @@ class GLIPNeckMixin(ClassEmbeddingsMixin):
             mil_labels = []
             for gt_label in gt_labels:
                 mil_label = gt_label.clone()
-                mil_label.apply_(self._seen_ids_mapper.__getitem__)
+                # mil_label.apply_(self._seen_ids_mapper.__getitem__)
+                mil_label.map_(mil_label, lambda a, b: self._seen_ids_mapper[a])
                 mil_labels.append(mil_label)
         else:
             mil_labels = None
