@@ -38,17 +38,26 @@ model = dict(
             hidden_dim=512,
         ),
     ),
-    glip_neck= dict(
+    glip_neck=dict(
         in_channels=256,
         num_levels=5,
         refine_level=2,
         refine=dict(
+            type='StandardFusionDyHead',
+            num_layers=3, 
             mil_classifier=dict(
                 type='DyHeadClassifier',
                 kappa=35, 
                 logits_weight=False,
             ),
-            num_layers=3, 
+            loss_mil=dict(
+                type='BCEWithLogitsLoss',
+                weight=1,
+            ),
+            loss_image_kd=dict(
+                type='L1Loss',
+                weight=128,
+            ),
         ),
     ),
 )

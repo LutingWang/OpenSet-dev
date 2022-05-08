@@ -38,13 +38,12 @@ model = dict(
     glip_neck= dict(
         refine_level=3,
         refine=dict(
+            num_layers=2, 
             mil_classifier=dict(
                 type='DyHeadClassifier',
                 logits_weight=False,
                 kappa=35,
             ),
-            num_layers=2, 
-            image_kd_loss_weight=128,
         ),
     ),
     # roi_head=dict(ensemble_head=dict(distiller=dict(losses=dict(bbox_kd=dict(weight=128.0))))),

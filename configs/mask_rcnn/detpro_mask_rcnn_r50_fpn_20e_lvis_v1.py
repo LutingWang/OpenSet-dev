@@ -8,7 +8,7 @@ _base_ = [
 model = dict(
     backbone=dict(
         # frozen_stages=-1,
-        norm_cfg=dict(type='SyncBN'),
+        # norm_cfg=dict(type='SyncBN'),
     ),
     neck=dict(
         norm_cfg=dict(type='SyncBN'),
