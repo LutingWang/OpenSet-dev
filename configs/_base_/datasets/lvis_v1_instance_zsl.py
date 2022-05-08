@@ -9,7 +9,7 @@ train_pipeline = [
     dict(type='LoadImageFromFile'),
     # dict(type='LoadPthEmbeddings', data_root='data/lvis_v1/proposal_embeddings4/'),
     # dict(type='LoadZipEmbeddings', data_root='data/lvis_v1/proposal_embeddings.zip/data/lvis_clip_image_embedding/', task_name='train2017'),
-    dict(type='LoadPthEmbeddings', data_root='data/lvis_v1/proposal_embeddings10/', detpro=True),
+    dict(type='LoadPthEmbeddings', data_root='data/lvis_v1/proposal_embeddings10/', detpro=True, min_bbox_area=32*32),
     dict(type='LoadAnnotations', with_bbox=True, with_mask=True),
     dict(
         type='Resize',
