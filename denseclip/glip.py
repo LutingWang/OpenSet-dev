@@ -298,7 +298,7 @@ class GLIPNeckMixin(ClassEmbeddingsMixin):
         # self._seen_ids_mapper = {c: i for i, c in enumerate(self._seen_ids)}
         seen_ids_mapper = torch.zeros(self._class_embeddings.shape[0], dtype=torch.long) - 1
         seen_ids_mapper[self._seen_ids] = torch.arange(len(self._seen_ids))
-        self._seen_ids_mapper = nn.Parameter(seen_ids_mapper, requires_grad=False)
+        self.register_buffer('seen_ids_mapper', seen_ids_mapper)
 
     def extract_feat(
         self, 
