@@ -295,7 +295,10 @@ class GLIPNeckMixin(ClassEmbeddingsMixin):
         super().__init__(*args, **kwargs)
         glip_neck.refine.embedding_dim = self._class_embeddings.shape[1]
         self._glip_neck = GLIPNeck(**glip_neck)
-        self._seen_ids_mapper = {c: i for i, c in enumerate(self._seen_ids)}
+        # self._seen_ids_mapper = {c: i for i, c in enumerate(self._seen_ids)}
+        seen_ids_mapper = torch.zeros(self._class_embeddings.shape[0], dtype=torch.long) - 1
+        seen_ids_mapper[self._seen_ids] = torch.arange(len(self._seen_ids))
+        self._seen_ids_mapper = nn.Parameter(seen_ids_mapper, requires_grad=False)
 
     def extract_feat(
         self, 
@@ -305,12 +308,14 @@ class GLIPNeckMixin(ClassEmbeddingsMixin):
     ):
         x = super().extract_feat(image)
         if self.training:
-            mil_labels = []
-            for gt_label in gt_labels:
-                mil_label = gt_label.clone()
-                # mil_label.apply_(self._seen_ids_mapper.__getitem__)
-                mil_label.map_(mil_label, lambda a, b: self._seen_ids_mapper[a])
-                mil_labels.append(mil_label)
+            # mil_labels = []
+            # for gt_label in gt_labels:
+            #     mil_label = gt_label.clone()
+            #     mil_label.apply_(self._seen_ids_mapper.__getitem__)
+            #     mil_labels.append(mil_label)
+            mil_labels = [self._seen_ids_mapper[gt_label] for gt_label in gt_labels]
+            for mil_label in mil_labels:
+                assert mil_label.ge(0).all(), mil_label
         else:
             mil_labels = None
         return self._glip_neck(x, self.class_embeddings, mil_labels, clip_image_features)
