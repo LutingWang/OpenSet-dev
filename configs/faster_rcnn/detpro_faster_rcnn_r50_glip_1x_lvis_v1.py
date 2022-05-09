@@ -60,4 +60,10 @@ model = dict(
             ),
         ),
     ),
+    loss_ds=dict(
+        type='DSLoss',
+        weight=128,
+        pred_features=256,
+        target_features=512,
+    )
 )

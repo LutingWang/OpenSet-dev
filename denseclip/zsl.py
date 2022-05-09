@@ -6,7 +6,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from mmcv import ConfigDict
-from mmdet.core import bbox2roi
+from mmdet.core import bbox2roi, MaxIoUAssigner
 from mmdet.models import DETECTORS, HEADS, LOSSES, RetinaHead, ConvFCBBoxHead, StandardRoIHead, KnowledgeDistillationKLDivLoss
 
 from .datasets import COCO_INDEX_SEEN_48_17, COCO_ALL_48_17, CocoGZSLDataset, LVIS_V1_SEEN_866_337

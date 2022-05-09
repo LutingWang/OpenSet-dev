@@ -3,7 +3,6 @@ from typing import Any, List, Optional, Tuple
 
 import clip.model
 import einops
-from denseclip.utils import has_debug_flag
 import todd.utils
 import torch
 import torch.nn as nn
@@ -13,7 +12,8 @@ from mmcv.ops import batched_nms
 from mmdet.core import DistancePointBBoxCoder
 from mmdet.models import BACKBONES, HEADS, RetinaHead, RPNHead
 
-from .prior_generator import AnchorGeneratorWithPos
+from .mmdet_patch import AnchorGenerator
+from .utils import has_debug_flag
 
 
 class AttentionPool2d(clip.model.AttentionPool2d):
@@ -162,7 +162,7 @@ class ContextDecoder(nn.TransformerDecoder):
 
 
 class RPNHeadWithPos(RPNHead):
-    prior_generator: AnchorGeneratorWithPos
+    prior_generator: AnchorGenerator
 
     def _bbox_post_process(
         self, 
@@ -215,7 +215,7 @@ class RPNHeadWithPos(RPNHead):
 
 @HEADS.register_module()
 class RetinaRPNHead(RetinaHead):
-    prior_generator: AnchorGeneratorWithPos
+    prior_generator: AnchorGenerator
 
     def forward_train(self, x, img_metas, gt_bboxes, gt_labels=None, gt_bboxes_ignore=None, proposal_cfg=None, **kwargs):
         proposal_cfg = ConfigDict(

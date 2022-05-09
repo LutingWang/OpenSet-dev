@@ -15,7 +15,7 @@ from mmdet.models import DETECTORS, RetinaHead, SingleStageDetector
 
 from .datasets import CocoGZSLDataset
 from .model import CLIPResNetWithAttention, ContextDecoder, RetinaRPNHead, Classifier
-from .prior_generator import AnchorGeneratorWithPos
+from .mmdet_patch import AnchorGenerator
 # from .utils import SimpleTokenizer, encode_bboxes
 
 
@@ -325,7 +325,7 @@ class DenseCLIP_RetinaNetKD(SingleStageDetector):
 
         teacher_crop_features = []
         crop_indices = []
-        prior_generator: AnchorGeneratorWithPos = self.bbox_head.prior_generator
+        prior_generator: AnchorGenerator = self.bbox_head.prior_generator
         with prior_generator.with_pos():
             anchor_list, valid_flag_list = self.bbox_head.get_anchors(
                 featmap_sizes=[featmap.shape[-2:] for featmap in x], 

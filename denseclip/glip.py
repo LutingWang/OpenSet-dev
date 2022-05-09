@@ -1,4 +1,4 @@
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, cast
 
 import einops
 import einops.layers.torch
@@ -10,12 +10,14 @@ import torch.nn as nn
 import torch.nn.functional as F
 from mmcv import ConfigDict
 from mmcv.runner import BaseModule, ModuleList
+from mmdet.core import AssignResult, MaxIoUAssigner
 from mmdet.models import BACKBONES, DETECTORS, NECKS, FasterRCNN, MaskRCNN, TwoStageDetector, build_neck
-from timm.models.layers import DropPath
+from todd.losses import LOSSES, L1Loss
+from todd.utils import ListTensor
 
 from .datasets import COCO_INDEX_SEEN_48_17, COCO_ALL_48_17, LVIS_V1_SEEN_866_337
 from .mil_classifiers import BaseMILClassifier, MIL_CLASSIFIERS, ClassificationResult
-from .mmdet_patch import DyHeadBlock, BFP, ResNet, TwoStageDetector
+from .mmdet_patch import DyHeadBlock, BFP, ResNet, TwoStageDetector, AnchorGenerator
 from .refine import REFINE_LAYERS
 
 
@@ -84,6 +86,53 @@ class GLIPNeck(BFP):
         )
 
 
+@LOSSES.register_module()
+class DSLoss(L1Loss):
+    def __init__(
+        self, *args, pred_features: int, target_features: int, **kwargs,
+    ):
+        super().__init__(*args, **kwargs)
+        self._adapt = nn.Linear(pred_features, target_features)
+
+    def forward(
+        self, 
+        x: Tuple[torch.Tensor], 
+        bboxes: List[torch.Tensor], 
+        bbox_embeddings: List[torch.Tensor], 
+        prior_generator: AnchorGenerator, 
+        assigner: MaxIoUAssigner,
+    ) -> Dict[str, torch.Tensor]:
+        with prior_generator.with_pos():
+            anchors = prior_generator.grid_priors(
+                [featmap.shape[-2:] for featmap in x],
+                device=x[0].device,
+            )
+        anchors = torch.cat(anchors)
+        poses = anchors[:, [4, 7, 5, 6]]  # level, anchor_id(batch), h, w
+        anchors = anchors[:, :4]
+        preds = []  # position of preds
+        targets = []
+        for i, (bbox, bbox_embedding) in enumerate(zip(bboxes, bbox_embeddings)):
+            with todd.utils.setattr_temp(assigner, 'match_low_quality', False):
+                assign_result: AssignResult = assigner.assign(anchors, bbox)
+            indices = assign_result.gt_inds > 0
+            pred = poses[indices].clone()
+            pred[:, 1] = i
+            bbox_indices = assign_result.gt_inds[indices] - 1
+            target = bbox_embedding[bbox_indices]
+            preds.append(pred)
+            targets.append(target)
+        x = ListTensor.apply(x, lambda t: einops.rearrange(t, 'b c h w -> b h w c'))
+        preds = ListTensor.index(
+            x, torch.cat(preds),
+        )
+        preds = self._adapt(preds)
+        preds = F.normalize(preds)
+        targets = torch.cat(targets)
+        loss = super().forward(preds, targets)
+        return dict(loss_ds=loss)
+
+
 class ClassEmbeddingsMixin(TwoStageDetector):
     def __init__(
         self, 
@@ -124,7 +173,13 @@ class GLIPBackboneMixin(ClassEmbeddingsMixin):
 
 
 class GLIPNeckMixin(ClassEmbeddingsMixin):
-    def __init__(self, *args, glip_neck: ConfigDict, **kwargs):
+    def __init__(
+        self, 
+        *args, 
+        glip_neck: ConfigDict, 
+        loss_ds: Optional[ConfigDict] = None, 
+        **kwargs,
+    ):
         super().__init__(*args, **kwargs)
         glip_neck.refine.embedding_dim = self._class_embeddings.shape[1]
         self._glip_neck = GLIPNeck(**glip_neck)
@@ -132,6 +187,8 @@ class GLIPNeckMixin(ClassEmbeddingsMixin):
         seen_ids_mapper = torch.zeros(self._class_embeddings.shape[0], dtype=torch.long) - 1
         seen_ids_mapper[self._seen_ids] = torch.arange(len(self._seen_ids))
         self.register_buffer('_seen_ids_mapper', seen_ids_mapper, persistent=False)
+
+        self._loss_ds = None if loss_ds is None else LOSSES.build(loss_ds)
 
     def extract_feat(
         self, 
@@ -166,18 +223,32 @@ class GLIPNeckMixin(ClassEmbeddingsMixin):
         proposals: Optional[List[torch.Tensor]] = None,
         *,
         image_embeddings: torch.Tensor, 
+        bboxes: List[torch.Tensor],
+        bbox_embeddings: List[torch.Tensor],
         **kwargs,
     ) -> Dict[str, Any]:
         x, (glip_losses,) = self.extract_feat(img, gt_labels, image_embeddings)
+        x = cast(List[torch.Tensor], x)
+
         proposal_cfg = self.train_cfg.get('rpn_proposal', self.test_cfg.rpn)
         rpn_losses, proposal_list = self.rpn_head.forward_train(
             x, img_metas, gt_bboxes, proposal_cfg=proposal_cfg, **kwargs,
         )
         roi_losses = self.roi_head.forward_train(
             x, img_metas, proposal_list, gt_bboxes, gt_labels,
-            gt_bboxes_ignore, gt_masks, **kwargs,
+            gt_bboxes_ignore, gt_masks, bboxes=bboxes, 
+            bbox_embeddings=bbox_embeddings, **kwargs,
         )
-        return dict(**rpn_losses, **roi_losses, **glip_losses)
+
+        losses = dict(**rpn_losses, **roi_losses, **glip_losses)
+        if self._loss_ds is not None:
+            ds_losses = self._loss_ds(
+                x, bboxes, bbox_embeddings, 
+                self.rpn_head.prior_generator, 
+                self.rpn_head.assigner,
+            )
+            losses.update(ds_losses)
+        return losses
 
 
 class GLIPMixin(GLIPNeckMixin, GLIPBackboneMixin):
