@@ -1,6 +1,6 @@
 from abc import abstractmethod
 from collections import defaultdict
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, cast
 
 import einops
 import einops.layers.torch
@@ -223,6 +223,28 @@ class CascadeFusionDyHead(BaseFusionDyHead):
             ),
         ) for config in configs])
 
+    def _add_gts(
+        self, 
+        classification_result: ClassificationResult, 
+        mil_labels: torch.Tensor, 
+        updated_class_embeddings: torch.Tensor,
+    ):
+        for i in range(mil_labels.shape[0]):
+            mil_label: torch.Tensor = mil_labels[i]
+            class_embeddings: torch.Tensor = classification_result.class_embeddings[i]
+            indices: torch.Tensor = classification_result.indices[i]
+            gt_inds, = mil_label.index_put((indices,), mil_label.new_zeros([])).nonzero(as_tuple=True)
+            gt_inds = gt_inds[:indices.shape[0] // 10]
+            num_gts = gt_inds.shape[0]
+            if num_gts == 0:
+                continue
+            class_embeddings[-num_gts:] = updated_class_embeddings[i, gt_inds]
+            indices[-num_gts:] = gt_inds
+            if classification_result.logits_weight is not None:
+                logits_weight: torch.Tensor = classification_result.logits_weight[i]
+                class_logits: torch.Tensor = classification_result.class_logits[i]
+                logits_weight[-num_gts:] = class_logits[gt_inds].detach().sigmoid()
+
     def forward(
         self, 
         bsf: torch.Tensor, 
@@ -233,48 +255,42 @@ class CascadeFusionDyHead(BaseFusionDyHead):
         if self.training:
             assert mil_labels is not None
             losses = defaultdict(list)
-            gt_class_embeddings = [class_embeddings[mil_label.bool()] for mil_label in mil_labels]
         else:
             assert mil_labels is None
 
-        for layer, (fuse_layer, dyhead_layer) in enumerate(zip(self._fuse_layers, self._dyhead_layers)):
-            mil_classifier = self._mil_classifiers[layer]
+        updated_class_embeddings = einops.repeat(class_embeddings, 'c d -> b c d', b=bsf.shape[0])
+        for mil_classifier, fuse_layer, dyhead_layer in zip(
+            self._mil_classifiers, self._fuse_layers, self._dyhead_layers,
+        ):
             classification_result: ClassificationResult = mil_classifier(bsf, class_embeddings)
+            
+            if self.training:
+                loss_mil = self._loss_mil(
+                    classification_result.class_logits, 
+                    mil_labels,
+                )
+                loss_image_kd = self._loss_image_kd(
+                    classification_result.image_features, 
+                    F.normalize(clip_image_features), 
+                )
+                losses['loss_mil'].append(loss_mil)
+                losses['loss_image_kd'].append(loss_image_kd)
+                self._add_gts(classification_result, mil_labels, updated_class_embeddings)
+                mil_labels = torch.gather(mil_labels, 1, classification_result.indices)
 
-            bsf, class_embeddings = fuse_layer(
-                bsf, 
-                classification_result.class_embeddings, 
+            indices = einops.repeat(
+                classification_result.indices, 'b n -> b n c', 
+                c=updated_class_embeddings.shape[-1],
+            )
+            updated_class_embeddings = torch.gather(updated_class_embeddings, 1, indices)
+            class_embeddings = classification_result.class_embeddings
+            bsf, updated_class_embeddings = fuse_layer(
+                bsf, updated_class_embeddings, 
                 classification_result.logits_weight,
             )
             bsf = dyhead_layer(bsf)
 
-            if not self.training:
-                continue
-
-            loss_mil = self._loss_mil(
-                classification_result.class_logits, 
-                mil_labels,
-            )
-            losses['loss_mil'].append(loss_mil)
-            loss_image_kd = self._loss_image_kd(
-                classification_result.image_features, 
-                F.normalize(clip_image_features), 
-            )
-            losses['loss_image_kd'].append(loss_image_kd)
-
-            if class_embeddings is None:
-                continue
-
-            mil_labels = torch.gather(mil_labels, 1, classification_result.indices)
-            max_num_gts = max(class_embeddings.shape[1] // 10, 1)
-            for i, gt_class_embedding in enumerate(gt_class_embeddings):
-                gt_class_embedding = gt_class_embedding[:max_num_gts]
-                num_gts = gt_class_embedding.shape[0]
-                class_embeddings[i, -num_gts:] = gt_class_embedding
-                mil_labels[i, -num_gts:] = 1
-
-        assert class_embeddings is None
+        assert updated_class_embeddings is None
         if self.training:
             return bsf, {k: sum(v) / len(v) for k, v in losses.items()}
         return bsf
-

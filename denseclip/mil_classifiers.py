@@ -29,6 +29,7 @@ class BaseMILClassifier(BaseModule):
         **kwargs,
     ):
         super().__init__(*args, **kwargs)
+        assert kappa >= 10, f'kappa must be >= 10, but got {kappa}.'
         self._channels = channels
         self._embedding_dim = embedding_dim
         self._logits_weight = logits_weight

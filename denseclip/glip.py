@@ -271,5 +271,15 @@ class GLIPFasterRCNN(GLIPMixin, FasterRCNN):
 
 
 @DETECTORS.register_module()
+class GLIPBackboneMaskRCNN(GLIPBackboneMixin, MaskRCNN):
+    pass
+
+
+@DETECTORS.register_module()
+class GLIPNeckMaskRCNN(GLIPNeckMixin, MaskRCNN):
+    pass
+
+
+@DETECTORS.register_module()
 class GLIPMaskRCNN(GLIPMixin, MaskRCNN):
     pass
