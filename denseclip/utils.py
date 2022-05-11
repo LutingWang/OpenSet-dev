@@ -105,6 +105,7 @@ def debug_init(debug: bool, cfg: Config):
             data_train.proposal_file = cfg.data.val.proposal_file
     if has_debug_flag(4):
         NORM_LAYERS.register_module('SyncBN', force=True, module=NORM_LAYERS.get('BN'))
+        cfg.fp16 = None
     if has_debug_flag(5):
         cfg.data.samples_per_gpu = 2
 

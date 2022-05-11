@@ -9,48 +9,18 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from mmcv import ConfigDict
-from mmcv.runner import BaseModule, ModuleList
 from mmdet.core import AssignResult, MaxIoUAssigner
-from mmdet.models import BACKBONES, DETECTORS, NECKS, FasterRCNN, MaskRCNN, TwoStageDetector, build_neck
+from mmdet.models import BACKBONES, DETECTORS, NECKS, FasterRCNN, FPN, MaskRCNN, TwoStageDetector, build_neck
 from todd.losses import LOSSES, L1Loss
 from todd.utils import ListTensor
 
 from .datasets import COCO_INDEX_SEEN_48_17, COCO_ALL_48_17, LVIS_V1_SEEN_866_337
 from .mil_classifiers import BaseMILClassifier, MIL_CLASSIFIERS, ClassificationResult
 from .mmdet_patch import DyHeadBlock, BFP, ResNet, TwoStageDetector, AnchorGenerator
-from .refine import REFINE_LAYERS
+from .refine import PLV, REFINE_LAYERS, PLVRefine
 
 
 # TODO: change class_embeddings to buffer with persistent=False
-
-
-class BackboneFusion(BaseModule):
-    def __init__(
-        self, *args, v_dim: int, l_dim: int, hidden_dim: int, **kwargs,
-    ):
-        super().__init__(*args, **kwargs)
-        self._v_proj = nn.Sequential(
-            nn.Conv2d(v_dim, hidden_dim, 1),
-            nn.Tanh(),
-        )
-        self._l_proj = nn.Sequential(
-            nn.Linear(l_dim, hidden_dim),
-            nn.Tanh(),
-        )
-        self._out_v_proj = nn.Sequential(
-            nn.ReLU(),
-            nn.Conv2d(hidden_dim, v_dim, 1),
-            nn.BatchNorm2d(v_dim),
-            nn.ReLU()
-        )
-
-    def forward(self, v: torch.Tensor, l: torch.Tensor) -> torch.Tensor:
-        v_feats = self._v_proj(v)
-        l_feats = self._l_proj(l)
-        l_feats = einops.reduce(l_feats, 'b c -> 1 c 1 1', reduction='mean')
-        v_feats = self._out_v_proj(v_feats * l_feats)
-        # v_feats = F.normalize(v + v_feats)
-        return v + v_feats
 
 
 @BACKBONES.register_module()
@@ -61,7 +31,7 @@ class GLIPResNet(ResNet):
         embedding_dim: int,
         hidden_dim: int, 
     ) -> nn.ModuleList:
-        fusions = [BackboneFusion(
+        fusions = [PLV(
             v_dim=channel, 
             l_dim=embedding_dim, 
             hidden_dim=hidden_dim,
@@ -177,6 +147,7 @@ class GLIPNeckMixin(ClassEmbeddingsMixin):
         self, 
         *args, 
         glip_neck: ConfigDict, 
+        plv_refine: Optional[ConfigDict] = None,
         loss_ds: Optional[ConfigDict] = None, 
         **kwargs,
     ):
@@ -188,6 +159,16 @@ class GLIPNeckMixin(ClassEmbeddingsMixin):
         seen_ids_mapper[self._seen_ids] = torch.arange(len(self._seen_ids))
         self.register_buffer('_seen_ids_mapper', seen_ids_mapper, persistent=False)
 
+        self._plv_refine = (
+            None if plv_refine is None else 
+            PLVRefine(
+                channels=self.neck.in_channels, 
+                embedding_dim=self._class_embeddings.shape[1],
+                loss_mil=glip_neck.refine.loss_mil,
+                loss_image_kd=glip_neck.refine.loss_image_kd,
+                **plv_refine,
+            )
+        )
         self._loss_ds = None if loss_ds is None else LOSSES.build(loss_ds)
 
     def extract_feat(
@@ -196,21 +177,32 @@ class GLIPNeckMixin(ClassEmbeddingsMixin):
         gt_labels: Optional[List[torch.Tensor]] = None, 
         clip_image_features: Optional[torch.Tensor] = None,
     ):
-        x = super().extract_feat(image)
+        x = self.backbone(image)
+        class_embeddings = self.class_embeddings
         if self.training:
-            # mil_labels = []
-            # for gt_label in gt_labels:
-            #     mil_label = gt_label.clone()
-            #     mil_label.apply_(self._seen_ids_mapper.__getitem__)
-            #     mil_labels.append(mil_label)
             mil_labels = image.new_zeros((len(gt_labels), len(self._seen_ids)))
             for i, gt_label in enumerate(gt_labels):
                 mil_label = self._seen_ids_mapper[gt_label]
                 assert mil_label.ge(0).all(), gt_label
                 mil_labels[i, mil_label] = 1.0
+            if self._plv_refine is not None:
+                x, class_embeddings, mil_labels, plv_losses = self._plv_refine(
+                    x, class_embeddings, mil_labels, clip_image_features,
+                )
         else:
             mil_labels = None
-        return self._glip_neck(x, self.class_embeddings, mil_labels, clip_image_features)
+            if self._plv_refine is not None:
+                x, class_embeddings = self._plv_refine(
+                    x, class_embeddings,
+                )
+        x = self.neck(x)
+        results = self._glip_neck(x, class_embeddings, mil_labels, clip_image_features)
+        if self.training:
+            x, (glip_losses,) = results
+            if self._plv_refine is not None:
+                glip_losses.update({f'{k}_plv': v for k, v in plv_losses.items()})
+            return x, glip_losses
+        return x
 
     def forward_train(
         self, 
@@ -227,7 +219,7 @@ class GLIPNeckMixin(ClassEmbeddingsMixin):
         bbox_embeddings: List[torch.Tensor],
         **kwargs,
     ) -> Dict[str, Any]:
-        x, (glip_losses,) = self.extract_feat(img, gt_labels, image_embeddings)
+        x, glip_losses = self.extract_feat(img, gt_labels, image_embeddings)
         x = cast(List[torch.Tensor], x)
 
         proposal_cfg = self.train_cfg.get('rpn_proposal', self.test_cfg.rpn)

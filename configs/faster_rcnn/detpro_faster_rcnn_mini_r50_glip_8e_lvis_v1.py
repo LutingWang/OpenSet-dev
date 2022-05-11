@@ -39,11 +39,6 @@ model = dict(
         refine_level=3,
         refine=dict(
             num_layers=2, 
-            mil_classifier=dict(
-                type='DyHeadClassifier',
-                logits_weight=False,
-                kappa=35,
-            ),
         ),
     ),
     # roi_head=dict(ensemble_head=dict(distiller=dict(losses=dict(bbox_kd=dict(weight=128.0))))),

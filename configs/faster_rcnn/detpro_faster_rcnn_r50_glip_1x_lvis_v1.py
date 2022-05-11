@@ -28,16 +28,7 @@ train_pipeline = [
 ]
 data = dict(train=dict(dataset=dict(pipeline=train_pipeline)))
 model = dict(
-    type='GLIPFasterRCNN',
-    class_embeddings='data/lvis_v1/prompt/detpro_ViT-B-32.pt', 
-    backbone=dict(
-        type='GLIPResNet',
-        custom_plugins=dict(
-            in_channels=[256, 512, 1024, 2048],
-            embedding_dim=512,
-            hidden_dim=512,
-        ),
-    ),
+    type='GLIPNeckFasterRCNN',
     glip_neck=dict(
         in_channels=256,
         num_levels=5,
@@ -48,22 +39,31 @@ model = dict(
             mil_classifier=dict(
                 type='DyHeadClassifier',
                 kappa=35, 
-                logits_weight=False,
+                logits_weight=True,
             ),
             loss_mil=dict(
                 type='BCEWithLogitsLoss',
-                weight=1,
+                weight=2,
             ),
             loss_image_kd=dict(
                 type='L1Loss',
-                weight=128,
+                weight=256,
             ),
         ),
     ),
-    loss_ds=dict(
-        type='DSLoss',
-        weight=128,
-        pred_features=256,
-        target_features=512,
-    )
+    plv_refine=dict(
+        hidden_dim=512,
+        mil_classifier=dict(
+            type='DyHeadClassifier',
+            kappa=100, 
+            logits_weight=False,
+        ),
+    ),
+    # loss_ds=dict(
+    #     type='DSLoss',
+    #     weight=128,
+    #     pred_features=256,
+    #     target_features=512,
+    # )
 )
+fp16 = dict(loss_scale=dict(init_scale=512.)) 

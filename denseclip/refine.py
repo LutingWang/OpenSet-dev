@@ -294,3 +294,131 @@ class CascadeFusionDyHead(BaseFusionDyHead):
         if self.training:
             return bsf, {k: sum(v) / len(v) for k, v in losses.items()}
         return bsf
+
+
+class PLV(BaseModule):
+    def __init__(
+        self, *args, v_dim: int, l_dim: int, hidden_dim: int, **kwargs,
+    ):
+        super().__init__(
+            *args, 
+            init_cfg=dict(
+                type='Xavier', layer='Conv2d', 
+                distribution='uniform',
+            ),
+            **kwargs,
+        )
+        self._v_proj = nn.Sequential(
+            nn.Conv2d(v_dim, hidden_dim, 1),
+            nn.Tanh(),
+        )
+        self._l_proj = nn.Sequential(
+            nn.Linear(l_dim, hidden_dim),
+            nn.Tanh(),
+        )
+        self._out_v_proj = nn.Sequential(
+            nn.ReLU(),
+            nn.Conv2d(hidden_dim, v_dim, 1),
+            nn.BatchNorm2d(v_dim),
+            nn.ReLU()
+        )
+
+    def forward(self, v: torch.Tensor, l: torch.Tensor, logits_weight: Optional[torch.Tensor] = None) -> torch.Tensor:
+        v_feats = self._v_proj(v)
+        if l.ndim == 2:
+            l_feats = self._l_proj(l)
+            l_feats = einops.reduce(l_feats, 'c d -> 1 d 1 1', reduction='mean')
+        elif l.ndim == 3:
+            b, c, d = l.shape
+            l_feats = einops.rearrange(l, 'b c d -> (b c) d')
+            l_feats = self._l_proj(l_feats)
+            l_feats = einops.reduce(l_feats, '(b c) d -> b d 1 1', b=b, c=c, reduction='mean')
+        v_feats = self._out_v_proj(v_feats * l_feats)
+        # v_feats = F.normalize(v + v_feats)
+        return v + v_feats
+
+
+class PLVRefine(BaseModule):
+    def __init__(
+        self, 
+        *args, 
+        channels: List[int], 
+        embedding_dim: int,
+        hidden_dim: int,
+        mil_classifier,
+        loss_mil: ConfigDict,
+        loss_image_kd: ConfigDict,
+        **kwargs,
+    ):
+        super().__init__(*args, **kwargs)
+        self._channels = channels
+        self._embedding_dim = embedding_dim
+        self._loss_mil = LOSSES.build(loss_mil)
+        self._loss_image_kd = LOSSES.build(loss_image_kd)
+
+        self._mil_classifier: BaseMILClassifier = MIL_CLASSIFIERS.build(
+            mil_classifier, 
+            default_args=dict(
+                channels=channels[-1],
+                embedding_dim=self._embedding_dim,
+            ),
+        )
+        self._plvs = ModuleList([
+            PLV(v_dim=channel, l_dim=embedding_dim, hidden_dim=hidden_dim)
+            for channel in channels
+        ])
+        self.init_weights()
+
+    def _add_gts(
+        self, 
+        classification_result: ClassificationResult, 
+        mil_labels: torch.Tensor, 
+        class_embeddings: torch.Tensor,
+    ):
+        for i in range(mil_labels.shape[0]):
+            mil_label: torch.Tensor = mil_labels[i]
+            filtered_class_embeddings: torch.Tensor = classification_result.class_embeddings[i]
+            indices: torch.Tensor = classification_result.indices[i]
+            gt_inds, = mil_label.index_put((indices,), mil_label.new_zeros([])).nonzero(as_tuple=True)
+            gt_inds = gt_inds[:indices.shape[0] // 10]
+            num_gts = gt_inds.shape[0]
+            if num_gts == 0:
+                continue
+            filtered_class_embeddings[-num_gts:] = class_embeddings[gt_inds]
+            indices[-num_gts:] = gt_inds
+            if classification_result.logits_weight is not None:
+                logits_weight: torch.Tensor = classification_result.logits_weight[i]
+                class_logits: torch.Tensor = classification_result.class_logits[i]
+                logits_weight[-num_gts:] = class_logits[gt_inds].detach().sigmoid()
+
+    def forward(
+        self, 
+        x: Tuple[torch.Tensor], 
+        class_embeddings: torch.Tensor, 
+        mil_labels: Optional[torch.Tensor] = None,
+        clip_image_features: Optional[torch.Tensor] = None,
+    ):
+        classification_result: ClassificationResult = self._mil_classifier(x[-1], class_embeddings)
+            
+        if self.training:
+            loss_mil = self._loss_mil(
+                classification_result.class_logits, 
+                mil_labels,
+            )
+            loss_image_kd = self._loss_image_kd(
+                classification_result.image_features, 
+                F.normalize(clip_image_features), 
+            )
+            losses = dict(loss_mil=loss_mil, loss_image_kd=loss_image_kd)
+            self._add_gts(classification_result, mil_labels, class_embeddings)
+            mil_labels = torch.gather(mil_labels, 1, classification_result.indices)
+
+        class_embeddings = classification_result.class_embeddings
+        x = tuple(
+            plv(feat, class_embeddings, classification_result.logits_weight) 
+            for plv, feat in zip(self._plvs, x)
+        )
+
+        if self.training:
+            return x, class_embeddings, mil_labels, losses
+        return x, class_embeddings
