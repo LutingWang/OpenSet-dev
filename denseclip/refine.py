@@ -98,7 +98,7 @@ class Fusion(BaseModule):
         )  # Do not increase 50000, data type half has quite limited range
         attn_weights_v = attn_weights.softmax(dim=-1)
         if l_weights is not None:
-            l_weights = einops.repeat(l_weights, 'b num_heads -> (b num_heads) 1 l', num_heads=self._num_heads)
+            l_weights = einops.repeat(l_weights, 'b l -> (b num_heads) 1 l', num_heads=self._num_heads)
             attn_weights_v = attn_weights_v * l_weights
             attn_weights_v = attn_weights_v / attn_weights_v.sum(dim=-1, keepdim=True)
         attn_probs_v = F.dropout(attn_weights_v, p=self._dropout, training=self.training)
