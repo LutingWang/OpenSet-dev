@@ -20,3 +20,5 @@ workflow = [('train', 1)]
 opencv_num_threads = 0
 # set multi-process start method as `fork` to speed up the training
 mp_start_method = 'fork'
+
+fp16 = dict(loss_scale=dict(init_scale=512.)) 

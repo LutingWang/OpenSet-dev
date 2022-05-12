@@ -17,7 +17,7 @@ from todd.utils import ListTensor
 from .datasets import COCO_INDEX_SEEN_48_17, COCO_ALL_48_17, LVIS_V1_SEEN_866_337
 from .mil_classifiers import BaseMILClassifier, MIL_CLASSIFIERS, ClassificationResult
 from .mmdet_patch import DyHeadBlock, BFP, ResNet, TwoStageDetector, AnchorGenerator
-from .refine import PLV, REFINE_LAYERS, PLVRefine
+from .refine import PLV, REFINE_LAYERS, BaseFusionDyHead, PLVRefine
 
 
 # TODO: change class_embeddings to buffer with persistent=False
@@ -159,16 +159,6 @@ class GLIPNeckMixin(ClassEmbeddingsMixin):
         seen_ids_mapper[self._seen_ids] = torch.arange(len(self._seen_ids))
         self.register_buffer('_seen_ids_mapper', seen_ids_mapper, persistent=False)
 
-        self._plv_refine = (
-            None if plv_refine is None else 
-            PLVRefine(
-                channels=self.neck.in_channels, 
-                embedding_dim=self._class_embeddings.shape[1],
-                loss_mil=glip_neck.refine.loss_mil,
-                loss_image_kd=glip_neck.refine.loss_image_kd,
-                **plv_refine,
-            )
-        )
         self._loss_ds = None if loss_ds is None else LOSSES.build(loss_ds)
 
     def extract_feat(
@@ -185,24 +175,14 @@ class GLIPNeckMixin(ClassEmbeddingsMixin):
                 mil_label = self._seen_ids_mapper[gt_label]
                 assert mil_label.ge(0).all(), gt_label
                 mil_labels[i, mil_label] = 1.0
-            if self._plv_refine is not None:
-                x, class_embeddings, mil_labels, plv_losses = self._plv_refine(
-                    x, class_embeddings, mil_labels, clip_image_features,
-                )
         else:
             mil_labels = None
-            if self._plv_refine is not None:
-                x, class_embeddings = self._plv_refine(
-                    x, class_embeddings,
-                )
         x = self.neck(x)
-        results = self._glip_neck(x, class_embeddings, mil_labels, clip_image_features)
-        if self.training:
-            x, (glip_losses,) = results
-            if self._plv_refine is not None:
-                glip_losses.update({f'{k}_plv': v for k, v in plv_losses.items()})
-            return x, glip_losses
-        return x
+        results = self._glip_neck(x, class_embeddings, mil_labels=mil_labels, clip_image_features=clip_image_features)
+        if not self.training:
+            return results
+        x, (glip_losses,) = results
+        return x, glip_losses
 
     def forward_train(
         self, 
@@ -243,6 +223,67 @@ class GLIPNeckMixin(ClassEmbeddingsMixin):
         return losses
 
 
+class GLIPPLVNeckMixin(GLIPNeckMixin):
+    def __init__(
+        self, 
+        *args, 
+        plv_refine: Optional[ConfigDict] = None,
+        **kwargs,
+    ):
+        super().__init__(*args, **kwargs)
+        self._plv_refine = (
+            None if plv_refine is None else 
+            PLVRefine(
+                channels=self.neck.in_channels, 
+                embedding_dim=self._class_embeddings.shape[1],
+                **plv_refine,
+            )
+        )
+
+    def extract_feat(
+        self, 
+        image: torch.Tensor, 
+        gt_labels: Optional[List[torch.Tensor]] = None, 
+        clip_image_features: Optional[torch.Tensor] = None,
+    ):
+        x = self.backbone(image)
+        class_embeddings = self.class_embeddings
+        if self.training:
+            mil_labels = image.new_zeros((len(gt_labels), len(self._seen_ids)))
+            for i, gt_label in enumerate(gt_labels):
+                mil_label = self._seen_ids_mapper[gt_label]
+                assert mil_label.ge(0).all(), gt_label
+                mil_labels[i, mil_label] = 1.0
+            x, class_embeddings, logits_weight, mil_labels, plv_losses = self._plv_refine(
+                x, class_embeddings, mil_labels=mil_labels, clip_image_features=clip_image_features,
+            )
+        else:
+            x, class_embeddings, logits_weight = self._plv_refine(
+                x, class_embeddings,
+            )
+            mil_labels = None
+        x = self.neck(x)
+        if isinstance(self._glip_neck.refine, BaseFusionDyHead):
+            kwargs = dict(logits_weight=logits_weight)
+        elif self.training:
+            kwargs = dict(
+                mil_labels=mil_labels, 
+                clip_image_features=clip_image_features,
+            )
+        else:
+            kwargs = dict()
+        results = self._glip_neck(
+            x, 
+            class_embeddings, 
+            **kwargs,
+        )
+        if not self.training:
+            return results
+        x, (glip_losses,) = results
+        glip_losses.update(plv_losses)
+        return x, glip_losses
+
+
 class GLIPMixin(GLIPNeckMixin, GLIPBackboneMixin):
     pass
 
@@ -258,6 +299,11 @@ class GLIPNeckFasterRCNN(GLIPNeckMixin, FasterRCNN):
 
 
 @DETECTORS.register_module()
+class GLIPPLVNeckFasterRCNN(GLIPPLVNeckMixin, FasterRCNN):
+    pass
+
+
+@DETECTORS.register_module()
 class GLIPFasterRCNN(GLIPMixin, FasterRCNN):
     pass
 
@@ -269,6 +315,11 @@ class GLIPBackboneMaskRCNN(GLIPBackboneMixin, MaskRCNN):
 
 @DETECTORS.register_module()
 class GLIPNeckMaskRCNN(GLIPNeckMixin, MaskRCNN):
+    pass
+
+
+@DETECTORS.register_module()
+class GLIPPLVNeckMaskRCNN(GLIPPLVNeckMixin, MaskRCNN):
     pass
 
 

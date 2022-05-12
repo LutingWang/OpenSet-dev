@@ -39,24 +39,17 @@ model = dict(
             mil_classifier=dict(
                 type='DyHeadClassifier',
                 kappa=35, 
+                tau=1,
                 logits_weight=True,
+                loss_mil=dict(
+                    type='BCEWithLogitsLoss',
+                    weight=2,
+                ),
+                loss_image_kd=dict(
+                    type='L1Loss',
+                    weight=256,
+                ),
             ),
-            loss_mil=dict(
-                type='BCEWithLogitsLoss',
-                weight=2,
-            ),
-            loss_image_kd=dict(
-                type='L1Loss',
-                weight=256,
-            ),
-        ),
-    ),
-    plv_refine=dict(
-        hidden_dim=512,
-        mil_classifier=dict(
-            type='DyHeadClassifier',
-            kappa=100, 
-            logits_weight=False,
         ),
     ),
     # loss_ds=dict(
@@ -66,4 +59,3 @@ model = dict(
     #     target_features=512,
     # )
 )
-fp16 = dict(loss_scale=dict(init_scale=512.)) 

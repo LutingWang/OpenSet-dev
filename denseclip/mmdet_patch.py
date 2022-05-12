@@ -22,7 +22,7 @@ class DyHeadBlock(_DyHeadBlock):
 
 
 class BFP(_BFP):
-    def forward(self, inputs: Tuple[torch.Tensor], *args):
+    def forward(self, inputs: Tuple[torch.Tensor], *args, **kwargs):
         assert len(inputs) == self.num_levels
 
         # step 1: gather multi-level features by resize and average
@@ -41,7 +41,7 @@ class BFP(_BFP):
 
         # step 2: refine gathered features
         assert self.refine_type is not None
-        bsf = self.refine(bsf, *args)
+        bsf = self.refine(bsf, *args, **kwargs)
         if isinstance(bsf, tuple):
             args = bsf[1:]
             bsf = bsf[0]

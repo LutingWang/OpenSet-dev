@@ -1,3 +1,4 @@
+import numbers
 import os
 from typing import Any, List, Optional, Tuple
 
@@ -9,6 +10,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from mmcv import ConfigDict
 from mmcv.ops import batched_nms
+from mmcv.runner import BaseModule
 from mmdet.core import DistancePointBBoxCoder
 from mmdet.models import BACKBONES, HEADS, RetinaHead, RPNHead
 
@@ -248,10 +250,10 @@ class RetinaRPNHead(RetinaHead):
         return super()._bbox_post_process(*args, **kwargs)
 
 
-class Classifier(nn.Module):
+class Classifier(BaseModule):
     def __init__(self, tau: Tuple[float, float] = (0.07, 0.07), bias: Optional[float] = None):
         super().__init__()
-        if isinstance(tau, float):
+        if isinstance(tau, numbers.Number):
             tau = (tau, tau)
         self._tau = tau
         self._bias = (
@@ -264,6 +266,8 @@ class Classifier(nn.Module):
         return self._tau[self.training]
 
     def set_weight(self, weight: Optional[torch.Tensor], norm: bool = True):
+        if isinstance(weight, nn.Parameter):
+            weight = weight.data
         if norm:
             weight = F.normalize(weight)
         self._weight = weight
