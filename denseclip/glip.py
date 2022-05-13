@@ -147,7 +147,6 @@ class GLIPNeckMixin(ClassEmbeddingsMixin):
         self, 
         *args, 
         glip_neck: ConfigDict, 
-        plv_refine: Optional[ConfigDict] = None,
         loss_ds: Optional[ConfigDict] = None, 
         **kwargs,
     ):
@@ -263,7 +262,7 @@ class GLIPPLVNeckMixin(GLIPNeckMixin):
             )
             mil_labels = None
         x = self.neck(x)
-        if isinstance(self._glip_neck.refine, BaseFusionDyHead):
+        if type(self._glip_neck.refine) == BaseFusionDyHead:
             kwargs = dict(logits_weight=logits_weight)
         elif self.training:
             kwargs = dict(

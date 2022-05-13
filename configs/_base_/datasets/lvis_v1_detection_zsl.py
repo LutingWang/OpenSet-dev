@@ -9,7 +9,7 @@ train_pipeline = [
     dict(type='LoadImageFromFile'),
     # dict(type='LoadPthEmbeddings', data_root='data/lvis_v1/proposal_embeddings4/'),
     # dict(type='LoadZipEmbeddings', data_root='data/lvis_v1/proposal_embeddings.zip/data/lvis_clip_image_embedding/', task_name='train2017'),
-    dict(type='LoadPthEmbeddings', data_root='data/lvis_v1/proposal_embeddings10/', min_bbox_area=32*32, detpro=True),
+    dict(type='LoadPthEmbeddings', data_root='data/lvis_v1/proposal_embeddings10/', detpro=True, min_bbox_area=32*32),
     dict(type='LoadAnnotations', with_bbox=True),
     dict(
         type='Resize',
@@ -29,8 +29,10 @@ train_pipeline = [
 data = dict(
     train=dict(dataset=dict(
         type='LVISV1ZSLSeenDataset',
+        # type='LVISV1WithBugDataset',
         pipeline=train_pipeline,
         ann_file=data_root + 'annotations/lvis_v1_train_866_337_4.json',
+        # ann_file=data_root + 'annotations/lvis_v1_train.json',
         proposal_file=data_root + 'proposals/rpn_r101_fpn_lvis_v1_train.pkl',
     )),
     val=dict(type='LVISV1GZSLDataset'),

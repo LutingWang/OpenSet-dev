@@ -260,7 +260,12 @@ class CascadeFusionDyHead(BaseFusionDyHead):
         else:
             assert mil_labels is None
 
-        updated_class_embeddings = einops.repeat(class_embeddings, 'c d -> b c d', b=bsf.shape[0])
+        if class_embeddings.ndim == 2:
+            updated_class_embeddings = einops.repeat(class_embeddings, 'c d -> b c d', b=bsf.shape[0])
+        elif class_embeddings.ndim == 3:
+            updated_class_embeddings = class_embeddings
+        else:
+            raise ValueError(f'class_embeddings.ndim must be 2 or 3, but got {class_embeddings.ndim}')
         for mil_classifier, fuse_layer, dyhead_layer in zip(
             self._mil_classifiers, self._fuse_layers, self._dyhead_layers,
         ):

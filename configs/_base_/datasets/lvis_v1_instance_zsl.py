@@ -29,8 +29,10 @@ train_pipeline = [
 data = dict(
     train=dict(dataset=dict(
         type='LVISV1ZSLSeenDataset',
+        # type='LVISV1WithBugDataset',
         pipeline=train_pipeline,
         ann_file=data_root + 'annotations/lvis_v1_train_866_337_4.json',
+        # ann_file=data_root + 'annotations/lvis_v1_train.json',
         proposal_file=data_root + 'proposals/rpn_r101_fpn_lvis_v1_train.pkl',
     )),
     val=dict(type='LVISV1GZSLDataset'),

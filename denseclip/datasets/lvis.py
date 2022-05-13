@@ -5,7 +5,7 @@ import torch
 import lvis  # fix logging format
 from mmcv.parallel import DataContainer as DC
 from mmdet.datasets import LVISV1Dataset, DATASETS
-from typing import Any, Dict, Iterable, Tuple
+from typing import Any, Dict, Iterable, List, Tuple
 
 from ..utils import has_debug_flag
 from .zsl import ZSLDataset
@@ -217,3 +217,17 @@ class LVISV1PromptDataset(LVISV1GZSLDataset):
             item['img'] = DC(item['img'])
         print(self.data_infos[args[0]])
         return item
+
+
+@DATASETS.register_module()
+class LVISV1WithBugDataset(ZSLDataset, LVISV1Dataset):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._unseen_cat_ids = {
+            cat_id for cat_id, cat in self.coco.cats.items() 
+            if cat['frequency'] == 'r'
+        }
+
+    def _parse_ann_info(self, img_info: dict, ann_info: List[dict]) -> dict:
+        ann_info = [info for info in ann_info if info['category_id'] not in self._unseen_cat_ids]
+        return super()._parse_ann_info(img_info, ann_info)

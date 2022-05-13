@@ -17,10 +17,10 @@ model = dict(
             type='DyHeadClassifier',
             kappa=35, 
             logits_weight=True,
-            tau=1,
+            tau=0.007,
             loss_mil=dict(
-                type='BCEWithLogitsLoss',
-                weight=2,
+                type='FocalWithLogitsLoss',
+                weight=32,
             ),
             loss_image_kd=dict(
                 type='L1Loss',

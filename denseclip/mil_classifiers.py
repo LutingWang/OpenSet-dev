@@ -101,7 +101,7 @@ class DyHeadClassifier(BaseMILClassifier):
 
 @MIL_CLASSIFIERS.register_module()
 class GAPClassifier(BaseMILClassifier):
-    def adapt(self) -> Sequential:
+    def _build_adapt(self) -> Sequential:
         return Sequential(
             einops.layers.torch.Reduce('b c h w -> b c', reduction='mean'),
             nn.Linear(self._channels, self._embedding_dim),
