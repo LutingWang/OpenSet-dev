@@ -4,7 +4,7 @@ from typing import Dict, List, Tuple, Union
 
 import einops
 import einops.layers.torch
-import todd.utils
+import todd.schedulers
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -42,6 +42,7 @@ class BaseMILClassifier(Classifier):
         self._adapt = self._build_adapt()
         self._loss_mil = None if loss_mil is None else LOSSES.build(loss_mil)
         self._loss_image_kd = None if loss_image_kd is None else LOSSES.build(loss_image_kd)
+        self._loss_scheduler = todd.schedulers.WarmupScheduler(iter_=1000)
 
     @abstractmethod
     def _build_adapt(self) -> BaseModule:
@@ -80,7 +81,7 @@ class BaseMILClassifier(Classifier):
         loss_mil = self._loss_mil(
             result.class_logits, 
             mil_labels,
-        )
+        ) * self._loss_scheduler
         loss_image_kd = self._loss_image_kd(
             result.image_features, 
             F.normalize(clip_image_features), 
