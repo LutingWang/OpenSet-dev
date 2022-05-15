@@ -1,327 +1,181 @@
-from typing import Any, Dict, List, Optional, Tuple, cast
+from typing import List, Optional, Tuple
 
 import einops
 import einops.layers.torch
-import todd.datasets
-import todd.distillers
-import todd.utils
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from mmcv import ConfigDict
-from mmdet.core import AssignResult, MaxIoUAssigner
-from mmdet.models import BACKBONES, DETECTORS, NECKS, FasterRCNN, FPN, MaskRCNN, TwoStageDetector, build_neck
-from todd.losses import LOSSES, L1Loss
-from todd.utils import ListTensor
+from mmcv.runner import BaseModule, ModuleList
+from timm.models.layers import DropPath
 
-from .datasets import COCO_INDEX_SEEN_48_17, COCO_ALL_48_17, LVIS_V1_SEEN_866_337
-from .mil_classifiers import BaseMILClassifier, MIL_CLASSIFIERS, ClassificationResult
-from .mmdet_patch import DyHeadBlock, BFP, ResNet, TwoStageDetector, AnchorGenerator
-from .refine import PLV, REFINE_LAYERS, BaseFusionDyHead, PLVRefine
+from .mmdet_patch import DyHeadBlock
 
 
-# TODO: change class_embeddings to buffer with persistent=False
-
-
-@BACKBONES.register_module()
-class GLIPResNet(ResNet):
-    def _make_custom_plugins(
-        self, 
-        in_channels: List[int],
-        embedding_dim: int,
-        hidden_dim: int, 
-    ) -> nn.ModuleList:
-        fusions = [PLV(
-            v_dim=channel, 
-            l_dim=embedding_dim, 
-            hidden_dim=hidden_dim,
-        ) for channel in in_channels]
-        return nn.ModuleList(fusions)
-
-
-class GLIPNeck(BFP):
+class Fusion(BaseModule):
     def __init__(
         self, 
         *args, 
-        refine: ConfigDict, 
+        num_heads: int = 8,
+        embed_dim: int = 2048,
+        v_dim: int = 256, 
+        l_dim: int = 512,
+        avg_factor: int,
+        dropout: float = 0.1, 
+        drop_path: float = 0.0,
+        bi_direct: bool = True,
         **kwargs,
     ):
-        super().__init__(*args, refine_type=None, **kwargs)
-        self.refine_type = 'fusion_dyhead'
-        self.refine = REFINE_LAYERS.build(
-            refine,
-            default_args=dict(
-                channels=self.in_channels,
-            )
+        super().__init__(
+            *args,
+            init_cfg=dict(
+                type='Xavier', layer='Conv2d', distribution='uniform',
+            ),
+            **kwargs,
         )
 
+        head_dim = embed_dim // num_heads
+        assert head_dim * num_heads == embed_dim
 
-@LOSSES.register_module()
-class DSLoss(L1Loss):
-    def __init__(
-        self, *args, pred_features: int, target_features: int, **kwargs,
-    ):
-        super().__init__(*args, **kwargs)
-        self._adapt = nn.Linear(pred_features, target_features)
+        self._num_heads = num_heads
+        self._head_dim = head_dim
+        self._scale = head_dim ** (-0.5)
+
+        self._v_layer_norm = nn.LayerNorm(v_dim)
+        self._v_proj = nn.Linear(v_dim, embed_dim)
+        self._values_l_proj = nn.Linear(l_dim, embed_dim)
+        self._out_v_proj = nn.Linear(embed_dim, v_dim)
+        self._gamma_v = nn.Parameter(torch.ones((v_dim)) / avg_factor, requires_grad=True)
+
+        self._l_layer_norm = nn.LayerNorm(l_dim)
+        self._l_proj = nn.Linear(l_dim, embed_dim)
+        if bi_direct:
+            self._values_v_proj = nn.Linear(v_dim, embed_dim)
+            self._out_l_proj = nn.Linear(embed_dim, l_dim)
+            self._gamma_l = nn.Parameter(torch.ones((l_dim)) / avg_factor, requires_grad=True)
+
+        self._dropout = dropout
+        self._drop_path = DropPath(drop_path) if drop_path > 0. else nn.Identity()
+        self._bi_direct = bi_direct
+
+        self._stable_softmax_2d = False
+        self._clamp_min_for_underflow = True
+        self._clamp_max_for_overflow = True
 
     def forward(
         self, 
-        x: Tuple[torch.Tensor], 
-        bboxes: List[torch.Tensor], 
-        bbox_embeddings: List[torch.Tensor], 
-        prior_generator: AnchorGenerator, 
-        assigner: MaxIoUAssigner,
-    ) -> Dict[str, torch.Tensor]:
-        with prior_generator.with_pos():
-            anchors = prior_generator.grid_priors(
-                [featmap.shape[-2:] for featmap in x],
-                device=x[0].device,
-            )
-        anchors = torch.cat(anchors)
-        poses = anchors[:, [4, 7, 5, 6]]  # level, anchor_id(batch), h, w
-        anchors = anchors[:, :4]
-        preds = []  # position of preds
-        targets = []
-        for i, (bbox, bbox_embedding) in enumerate(zip(bboxes, bbox_embeddings)):
-            with todd.utils.setattr_temp(assigner, 'match_low_quality', False):
-                assign_result: AssignResult = assigner.assign(anchors, bbox)
-            indices = assign_result.gt_inds > 0
-            pred = poses[indices].clone()
-            pred[:, 1] = i
-            bbox_indices = assign_result.gt_inds[indices] - 1
-            target = bbox_embedding[bbox_indices]
-            preds.append(pred)
-            targets.append(target)
-        x = ListTensor.apply(x, lambda t: einops.rearrange(t, 'b c h w -> b h w c'))
-        preds = ListTensor.index(
-            x, torch.cat(preds),
+        v: torch.Tensor, 
+        l: torch.Tensor, 
+        l_weights: Optional[torch.Tensor] = None,
+    ) -> Tuple[torch.Tensor, Optional[torch.Tensor], Optional[torch.Tensor]]:
+        h, w = v.shape[-2:]
+        v = einops.rearrange(v, 'b c h w -> b (h w) c')
+
+        v = self._v_layer_norm(v)
+        l = self._l_layer_norm(l)
+
+        query_states: torch.Tensor = einops.rearrange(
+            self._v_proj(v) * self._scale, 
+            'b hw (num_heads head_dim) -> (b num_heads) hw head_dim', 
+            num_heads=self._num_heads, head_dim=self._head_dim,
         )
-        preds = self._adapt(preds)
-        preds = F.normalize(preds)
-        targets = torch.cat(targets)
-        loss = super().forward(preds, targets)
-        return dict(loss_ds=loss)
+        key_states: torch.Tensor = einops.rearrange(
+            self._l_proj(l), 
+            'b l (num_heads head_dim) -> (b num_heads) l head_dim', 
+            num_heads=self._num_heads, head_dim=self._head_dim,
+        )
+
+        attn_weights = torch.einsum('b n c, b l c -> b n l', query_states, key_states)
+        masks = einops.reduce(
+            attn_weights, '(b num_heads) (h w) l -> b l h w', 
+            num_heads=self._num_heads, h=h, w=w, reduction='mean',
+        ) if self.training else None
+        if self._stable_softmax_2d:
+            attn_weights = attn_weights - attn_weights.max()
+        attn_weights = torch.clamp(
+            attn_weights, 
+            min=-50000 if self._clamp_min_for_underflow else None,
+            max=50000 if self._clamp_max_for_overflow else None,
+        )  # Do not increase 50000, data type half has quite limited range
+        attn_weights_v = attn_weights.softmax(dim=-1)
+        if l_weights is not None:
+            l_weights = einops.repeat(l_weights, 'b l -> (b num_heads) 1 l', num_heads=self._num_heads)
+            attn_weights_v = attn_weights_v * l_weights
+            attn_weights_v = attn_weights_v / attn_weights_v.sum(dim=-1, keepdim=True)
+        attn_probs_v = F.dropout(attn_weights_v, p=self._dropout, training=self.training)
+        value_l_states = einops.rearrange(self._values_l_proj(l), 'b l (num_heads head_dim) -> (b num_heads) l head_dim', num_heads=self._num_heads, head_dim=self._head_dim)
+        attn_output_v = torch.einsum('b n l, b l c -> b n c', attn_probs_v, value_l_states)
+        attn_output_v = einops.rearrange(attn_output_v, '(b num_heads) n head_dim -> b n (num_heads head_dim)', num_heads=self._num_heads, head_dim=self._head_dim)
+        delta_v = self._out_v_proj(attn_output_v)
+
+        if self._bi_direct:
+            attn_weights = einops.rearrange(attn_weights, 'b hw l -> b l hw')
+            attn_weights = attn_weights - torch.max(attn_weights, dim=-1, keepdim=True)[0]
+            attn_weights = torch.clamp(
+                attn_weights, 
+                min=-50000 if self._clamp_min_for_underflow else None,
+                max=50000 if self._clamp_max_for_overflow else None,
+            )  # Do not increase 50000, data type half has quite limited range
+            attn_weights_l = attn_weights.softmax(dim=-1)
+            attn_probs_l = F.dropout(attn_weights_l, p=self._dropout, training=self.training)
+            value_v_states = einops.rearrange(self._values_v_proj(v), 'b hw (num_heads head_dim) -> (b num_heads) hw head_dim', num_heads=self._num_heads, head_dim=self._head_dim)
+            attn_output_l = torch.einsum('b l n, b n c -> b l c', attn_probs_l, value_v_states)
+            attn_output_l = einops.rearrange(attn_output_l, '(b num_heads) l head_dim -> b l (num_heads head_dim)', num_heads=self._num_heads, head_dim=self._head_dim)
+            delta_l = self._out_l_proj(attn_output_l)
+
+        v = v + self._drop_path(self._gamma_v * delta_v)
+        v = einops.rearrange(v, 'b (h w) c -> b c h w', h=h, w=w)
+        if self._bi_direct:
+            l = l + self._drop_path(self._gamma_l * delta_l)
+            return v, l, masks
+        else:
+            return v, None, masks
 
 
-class ClassEmbeddingsMixin(TwoStageDetector):
+class GLIP(BaseModule):
     def __init__(
         self, 
         *args, 
-        class_embeddings: str = 'data/lvis_v1/prompt/detpro_ViT-B-32.pt', 
+        channels: int, 
+        embedding_dim: int,
+        num_layers: int = 6, 
         **kwargs,
     ):
         super().__init__(*args, **kwargs)
-        class_embeddings: torch.Tensor = torch.load(
-            class_embeddings, map_location='cpu',
-        )
-        if class_embeddings.shape[0] == 80:
-            class_embeddings = class_embeddings[COCO_ALL_48_17]
-            seen_ids = COCO_INDEX_SEEN_48_17
-        elif class_embeddings.shape[0] == 1203:
-            seen_ids = LVIS_V1_SEEN_866_337
-        else:
-            raise ValueError(f'Unknown number of classes: {class_embeddings.shape[0]}')
-        self._class_embeddings = nn.Parameter(class_embeddings.float(), requires_grad=False)
-        self._seen_ids = seen_ids
+        self._channels = channels
+        self._embedding_dim = embedding_dim
+        self._num_layers = num_layers
 
-    @property
-    def class_embeddings(self) -> torch.Tensor:
+        self._fuse_layers = ModuleList(
+            Fusion(
+                avg_factor=num_layers, 
+                bi_direct=(l != num_layers - 1),
+            ) for l in range(num_layers)
+        )
+        self._dyhead_layers = ModuleList(
+            DyHeadBlock(channels, channels) for _ in range(num_layers)
+        )
+
+        self.init_weights()
+
+    def _forward(
+        self, 
+        bsf: torch.Tensor, 
+        class_embeddings: torch.Tensor, 
+        logits_weight: Optional[torch.Tensor] = None,
+    ):
+        multi_layer_masks = []
+        for fuse_layer, dyhead_layer in zip(self._fuse_layers, self._dyhead_layers):
+            bsf, class_embeddings, masks = fuse_layer(
+                bsf, class_embeddings, logits_weight,
+            )
+            multi_layer_masks.append(masks)
+            bsf = dyhead_layer(bsf)
+        assert class_embeddings is None
+        return bsf, multi_layer_masks
+
+    def forward(self, *args, **kwargs):
+        bsf, multi_layer_masks = self._forward(*args, **kwargs)
         if self.training:
-            return self._class_embeddings[self._seen_ids]
-        return self._class_embeddings
-
-
-class GLIPBackboneMixin(ClassEmbeddingsMixin):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        assert isinstance(self.backbone, GLIPResNet), type(self.backbone)
-
-    def extract_feat(self, image: torch.Tensor) -> torch.Tensor:
-        x = self.backbone(image, self.class_embeddings)
-        x = self.neck(x)
-        return x
-
-
-class GLIPNeckMixin(ClassEmbeddingsMixin):
-    def __init__(
-        self, 
-        *args, 
-        glip_neck: ConfigDict, 
-        loss_ds: Optional[ConfigDict] = None, 
-        **kwargs,
-    ):
-        super().__init__(*args, **kwargs)
-        glip_neck.refine.embedding_dim = self._class_embeddings.shape[1]
-        self._glip_neck = GLIPNeck(**glip_neck)
-        # self._seen_ids_mapper = {c: i for i, c in enumerate(self._seen_ids)}
-        seen_ids_mapper = torch.zeros(self._class_embeddings.shape[0], dtype=torch.long) - 1
-        seen_ids_mapper[self._seen_ids] = torch.arange(len(self._seen_ids))
-        self.register_buffer('_seen_ids_mapper', seen_ids_mapper, persistent=False)
-
-        self._loss_ds = None if loss_ds is None else LOSSES.build(loss_ds)
-
-    def extract_feat(
-        self, 
-        image: torch.Tensor, 
-        gt_labels: Optional[List[torch.Tensor]] = None, 
-        clip_image_features: Optional[torch.Tensor] = None,
-    ):
-        x = self.backbone(image)
-        class_embeddings = self.class_embeddings
-        if self.training:
-            mil_labels = image.new_zeros((len(gt_labels), len(self._seen_ids)))
-            for i, gt_label in enumerate(gt_labels):
-                mil_label = self._seen_ids_mapper[gt_label]
-                assert mil_label.ge(0).all(), gt_label
-                mil_labels[i, mil_label] = 1.0
-        else:
-            mil_labels = None
-        x = self.neck(x)
-        results = self._glip_neck(x, class_embeddings, mil_labels=mil_labels, clip_image_features=clip_image_features)
-        if not self.training:
-            return results
-        x, (glip_losses,) = results
-        return x, glip_losses
-
-    def forward_train(
-        self, 
-        img: torch.Tensor, 
-        img_metas: List[dict], 
-        gt_bboxes: List[torch.Tensor],
-        gt_labels: List[torch.Tensor],
-        gt_bboxes_ignore: Optional[List[torch.Tensor]] = None,
-        gt_masks: Optional[torch.Tensor] = None,
-        proposals: Optional[List[torch.Tensor]] = None,
-        *,
-        image_embeddings: torch.Tensor, 
-        bboxes: List[torch.Tensor],
-        bbox_embeddings: List[torch.Tensor],
-        **kwargs,
-    ) -> Dict[str, Any]:
-        x, glip_losses = self.extract_feat(img, gt_labels, image_embeddings)
-        x = cast(List[torch.Tensor], x)
-
-        proposal_cfg = self.train_cfg.get('rpn_proposal', self.test_cfg.rpn)
-        rpn_losses, proposal_list = self.rpn_head.forward_train(
-            x, img_metas, gt_bboxes, proposal_cfg=proposal_cfg, **kwargs,
-        )
-        roi_losses = self.roi_head.forward_train(
-            x, img_metas, proposal_list, gt_bboxes, gt_labels,
-            gt_bboxes_ignore, gt_masks, bboxes=bboxes, 
-            bbox_embeddings=bbox_embeddings, **kwargs,
-        )
-
-        losses = dict(**rpn_losses, **roi_losses, **glip_losses)
-        if self._loss_ds is not None:
-            ds_losses = self._loss_ds(
-                x, bboxes, bbox_embeddings, 
-                self.rpn_head.prior_generator, 
-                self.rpn_head.assigner,
-            )
-            losses.update(ds_losses)
-        return losses
-
-
-class GLIPPLVNeckMixin(GLIPNeckMixin):
-    def __init__(
-        self, 
-        *args, 
-        plv_refine: Optional[ConfigDict] = None,
-        **kwargs,
-    ):
-        super().__init__(*args, **kwargs)
-        self._plv_refine = (
-            None if plv_refine is None else 
-            PLVRefine(
-                channels=self.neck.in_channels, 
-                embedding_dim=self._class_embeddings.shape[1],
-                **plv_refine,
-            )
-        )
-
-    def extract_feat(
-        self, 
-        image: torch.Tensor, 
-        gt_labels: Optional[List[torch.Tensor]] = None, 
-        clip_image_features: Optional[torch.Tensor] = None,
-    ):
-        x = self.backbone(image)
-        class_embeddings = self.class_embeddings
-        if self.training:
-            mil_labels = image.new_zeros((len(gt_labels), len(self._seen_ids)))
-            for i, gt_label in enumerate(gt_labels):
-                mil_label = self._seen_ids_mapper[gt_label]
-                assert mil_label.ge(0).all(), gt_label
-                mil_labels[i, mil_label] = 1.0
-            x, class_embeddings, logits_weight, mil_labels, plv_losses = self._plv_refine(
-                x, class_embeddings, mil_labels=mil_labels, clip_image_features=clip_image_features,
-            )
-        else:
-            x, class_embeddings, logits_weight = self._plv_refine(
-                x, class_embeddings,
-            )
-            mil_labels = None
-        x = self.neck(x)
-        if type(self._glip_neck.refine) == BaseFusionDyHead:
-            kwargs = dict(logits_weight=logits_weight)
-        elif self.training:
-            kwargs = dict(
-                mil_labels=mil_labels, 
-                clip_image_features=clip_image_features,
-            )
-        else:
-            kwargs = dict()
-        results = self._glip_neck(
-            x, 
-            class_embeddings, 
-            **kwargs,
-        )
-        if not self.training:
-            return results
-        x, (glip_losses,) = results
-        glip_losses.update(plv_losses)
-        return x, glip_losses
-
-
-class GLIPMixin(GLIPNeckMixin, GLIPBackboneMixin):
-    pass
-
-
-@DETECTORS.register_module()
-class GLIPBackboneFasterRCNN(GLIPBackboneMixin, FasterRCNN):
-    pass
-
-
-@DETECTORS.register_module()
-class GLIPNeckFasterRCNN(GLIPNeckMixin, FasterRCNN):
-    pass
-
-
-@DETECTORS.register_module()
-class GLIPPLVNeckFasterRCNN(GLIPPLVNeckMixin, FasterRCNN):
-    pass
-
-
-@DETECTORS.register_module()
-class GLIPFasterRCNN(GLIPMixin, FasterRCNN):
-    pass
-
-
-@DETECTORS.register_module()
-class GLIPBackboneMaskRCNN(GLIPBackboneMixin, MaskRCNN):
-    pass
-
-
-@DETECTORS.register_module()
-class GLIPNeckMaskRCNN(GLIPNeckMixin, MaskRCNN):
-    pass
-
-
-@DETECTORS.register_module()
-class GLIPPLVNeckMaskRCNN(GLIPPLVNeckMixin, MaskRCNN):
-    pass
-
-
-@DETECTORS.register_module()
-class GLIPMaskRCNN(GLIPMixin, MaskRCNN):
-    pass
+            return bsf, multi_layer_masks
+        assert all(masks is None for masks in multi_layer_masks)
+        return bsf
