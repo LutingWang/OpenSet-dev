@@ -1,13 +1,13 @@
 model = dict(
     type='GLIPPLVNeckMaskRCNN',
     freeze_neck=False,
-    freeze_head=True,
+    freeze_head=False,
     backbone=dict(
         type='ResNet',
         depth=50,
         num_stages=4,
         out_indices=(0, 1, 2, 3),
-        frozen_stages=3,
+        frozen_stages=1,
         norm_cfg=dict(type='BN', requires_grad=True),
         norm_eval=True,
         style='caffe',
@@ -16,7 +16,7 @@ model = dict(
         type='FPN',
         in_channels=[256, 512, 1024, 2048],
         out_channels=256,
-        norm_cfg=dict(type='BN', requires_grad=True),
+        norm_cfg=dict(type='SyncBN', requires_grad=True),
         num_outs=5),
     rpn_head=dict(
         type='RPNHead',
@@ -47,7 +47,7 @@ model = dict(
             fc_out_channels=1024,
             roi_feat_size=7,
             num_classes=1203,
-            norm_cfg=dict(type='BN', requires_grad=True),
+            norm_cfg=dict(type='SyncBN', requires_grad=True),
             bbox_coder=dict(
                 type='DeltaXYWHBBoxCoder',
                 target_means=[0.0, 0.0, 0.0, 0.0],
@@ -307,17 +307,17 @@ data = dict(
                     dict(type='Collect', keys=['img'])
                 ])
         ]))
-evaluation = dict(interval=2, metric='bbox', tmpdir='work_dirs/tmp')
+evaluation = dict(interval=4, metric='bbox', tmpdir='work_dirs/tmp')
 img_prefix = 'data/coco/'
 optimizer = dict(type='SGD', lr=0.002, momentum=0.9, weight_decay=0.00003)
-optimizer_config = dict(grad_clip=None)
+optimizer_config = dict(grad_clip=dict(max_norm=20))
 lr_config = dict(
     policy='step',
     warmup='linear',
     warmup_iters=500,
     warmup_ratio=0.001,
-    step=[6])
-runner = dict(type='EpochBasedRunner', max_epochs=8)
+    step=[18, 22])
+runner = dict(type='EpochBasedRunner', max_epochs=24)
 checkpoint_config = dict(interval=1, create_symlink=False)
 log_config = dict(interval=50, hooks=[dict(type='TextLoggerHook')])
 custom_hooks = []
