@@ -8,7 +8,7 @@ import cv2
 import einops
 import numpy as np
 import todd.datasets
-import todd.utils
+import todd.reproduction
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -119,7 +119,7 @@ class CLIPFeatureExtractor(BaseDetector):
     def __init__(self, *args, clip_model: str = 'pretrained/clip/RN50.pt', data_root: str, **kwargs):
         super().__init__(*args, **kwargs)
         model, _ = clip.load(clip_model)
-        self._model: clip.model.CLIP = todd.utils.freeze_model(model)
+        self._model: clip.model.CLIP = todd.reproduction.freeze_model(model)
         self._loss = nn.Parameter(torch.zeros([]), requires_grad=True)
         self._train_writer = todd.datasets.PthAccessLayer(data_root=data_root, task_name='train', readonly=False, exist_ok=True)
         self._val_writer = todd.datasets.PthAccessLayer(data_root=data_root, task_name='val', readonly=False, exist_ok=True)
@@ -187,7 +187,7 @@ class CLIPImageFeatureExtractor(BaseDetector):
     def __init__(self, *args, clip_model: str = 'pretrained/clip/RN50.pt', data_root: str, **kwargs):
         super().__init__()
         model, _ = clip.load(clip_model)
-        self._model: clip.model.CLIP = todd.utils.freeze_model(model)
+        self._model: clip.model.CLIP = todd.reproduction.freeze_model(model)
         self._writer = todd.datasets.PthAccessLayer(data_root=data_root, task_name='train', readonly=False, exist_ok=True)
         self._loss = nn.Parameter(torch.zeros([]), requires_grad=True)
 

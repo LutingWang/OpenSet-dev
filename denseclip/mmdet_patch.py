@@ -9,7 +9,7 @@ from mmcv import ConfigDict
 from mmdet.core import PRIOR_GENERATORS, AnchorGenerator as _AnchorGenerator
 from mmdet.models import DETECTORS, BFP as _BFP, ResNet as _ResNet, TwoStageDetector as _TwoStageDetector, RPNHead, BaseRoIHead
 from mmdet.models.necks.dyhead import DyHeadBlock as _DyHeadBlock
-import todd.utils
+import todd.reproduction
 
 
 class DyHeadBlock(_DyHeadBlock):
@@ -98,29 +98,11 @@ class ResNet(_ResNet):
 
 
 @DETECTORS.register_module(force=True)
-class TwoStageDetector(_TwoStageDetector):
-    rpn_head: RPNHead
-    roi_head: BaseRoIHead
-
-    def __init__(self, *args, freeze_neck: bool = False, freeze_head: bool = False, **kwargs):
-        super().__init__(*args, **kwargs)
-        self._freeze: List[str] = []
-        if freeze_neck:
-            self._freeze.append('neck')
-            todd.utils.freeze_model(self.neck)
-        if freeze_head:
-            self._freeze.extend(['rpn_head', 'roi_head'])
-            todd.utils.freeze_model(self.rpn_head)
-            todd.utils.freeze_model(self.roi_head)
-
-    def train(self, mode: bool = True):
-        super().train(mode)
-        for name in self._freeze:
-            module: nn.Module = getattr(self, name)
-            for m in module.modules():
-                if isinstance(m, _BatchNorm):
-                    m.eval()
-        return self
+class TwoStageDetector(
+    todd.reproduction.FrozenMixin,
+    _TwoStageDetector,
+):
+    pass
 
 
 @PRIOR_GENERATORS.register_module(force=True)

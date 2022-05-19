@@ -4,7 +4,7 @@ from typing import Any, List, Optional, Tuple
 
 import clip.model
 import einops
-import todd.utils
+import todd.reproduction
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -66,10 +66,10 @@ class CLIPResNet(clip.model.ModifiedResNet):
         if self._frozen_stages == 0:
             return
         for i in range(3):
-            todd.utils.freeze_model(getattr(self, f'conv{i + 1}'))
-            todd.utils.freeze_model(getattr(self, f'bn{i + 1}'))
+            todd.reproduction.freeze_model(getattr(self, f'conv{i + 1}'))
+            todd.reproduction.freeze_model(getattr(self, f'bn{i + 1}'))
         for i in range(self._frozen_stages):
-            todd.utils.freeze_model(getattr(self, f'layer{i + 1}'))
+            todd.reproduction.freeze_model(getattr(self, f'layer{i + 1}'))
 
     def _eval_norms(self):
         if not self.training or not self._norm_eval:

@@ -1,7 +1,14 @@
 model = dict(
     type='GLIPPLVNeckMaskRCNN',
-    freeze_neck=False,
-    freeze_head=False,
+    freeze_cfg=dict(
+        no_grad=dict(
+            mode='partial',
+            modules=['neck', 'rpn_head', 'roi_head'],
+        ),
+        eval_=dict(
+            mode='deterministic',
+        ),
+    ),
     backbone=dict(
         type='ResNet',
         depth=50,
