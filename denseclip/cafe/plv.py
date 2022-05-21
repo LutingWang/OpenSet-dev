@@ -1,10 +1,11 @@
-from typing import Optional
+from typing import List, Optional, Tuple
 
 import einops
 import einops.layers.torch
+import todd.reproduction
 import torch
 import torch.nn as nn
-from mmcv.runner import BaseModule
+from mmcv.runner import BaseModule, ModuleList
 
 
 class PLV(BaseModule):
@@ -47,3 +48,35 @@ class PLV(BaseModule):
         v_feats = self._out_v_proj(v_feats * l_feats)
         # v_feats = F.normalize(v + v_feats)
         return v + v_feats
+
+
+class PLVNeck(BaseModule):
+    def __init__(
+        self, 
+        *args, 
+        channels: List[int], 
+        embedding_dim: int,
+        hidden_dim: int,
+        **kwargs,
+    ):
+        super().__init__(*args, **kwargs)
+        self._plvs = ModuleList([
+            PLV(v_dim=channel, l_dim=embedding_dim, hidden_dim=hidden_dim)
+            for channel in channels
+        ])
+
+    @todd.reproduction.set_seed_temp('PLVNeck')
+    def init_weights(self):
+        return super().init_weights()
+
+    def forward(
+        self, 
+        x: Tuple[torch.Tensor], 
+        class_embeddings: torch.Tensor, 
+        logits_weight: torch.Tensor,
+    ):
+        x = tuple(
+            plv(feat, class_embeddings, logits_weight) 
+            for plv, feat in zip(self._plvs, x)
+        )
+        return x

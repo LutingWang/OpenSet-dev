@@ -1,7 +1,14 @@
 model = dict(
     type='CAFE',
-    freeze_neck=False,
-    freeze_head=False,
+    freeze_cfg=dict(
+        no_grad=dict(
+            mode='partial',
+            modules=['neck._fpn', 'rpn_head', 'roi_head'],
+        ),
+        eval_=dict(
+            mode='deterministic',
+        ),
+    ),
     backbone=dict(
         type='ResNet',
         depth=50,
@@ -149,7 +156,7 @@ model = dict(
             mask_thr_binary=0.5)),
     init_cfg=dict(
         type='Pretrained',
-        checkpoint='data/ckpts/detpro_mask_rcnn_r50_fpn_20e_lvis_v1.pth'))
+        checkpoint='data/ckpts/detpro_mask_rcnn_r50_fpn_20e_lvis_v1_filter32.pth.converted'))
 dataset_type = 'LVISV1Dataset'
 data_root = 'data/lvis_v1/'
 img_norm_cfg = dict(
@@ -306,7 +313,7 @@ data = dict(
 evaluation = dict(interval=4, metric='bbox', tmpdir='work_dirs/tmp')
 img_prefix = 'data/coco/'
 optimizer = dict(type='SGD', lr=0.002, momentum=0.9, weight_decay=0.00003)
-optimizer_config = dict(grad_clip=None)
+optimizer_config = dict(grad_clip=dict(max_norm=20))
 lr_config = dict(
     policy='step',
     warmup='linear',

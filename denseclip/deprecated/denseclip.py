@@ -13,9 +13,10 @@ from mmcv import ConfigDict
 from mmdet.core import AssignResult, anchor_inside_flags
 from mmdet.models import DETECTORS, RetinaHead, SingleStageDetector
 
-from .datasets import CocoGZSLDataset
-from .model import CLIPResNetWithAttention, ContextDecoder, RetinaRPNHead, Classifier
-from .mmdet_patch import AnchorGenerator
+from ..cafe import Classifier
+from ..datasets import CocoGZSLDataset
+from .model import CLIPResNetWithAttention, ContextDecoder, RetinaRPNHead
+# from .cafe.mmdet_patch import AnchorGenerator
 # from .utils import SimpleTokenizer, encode_bboxes
 
 

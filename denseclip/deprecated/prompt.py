@@ -10,9 +10,9 @@ from mmcv.runner import BaseModule
 from mmdet.core import AssignResult, MaxIoUAssigner, bbox2result, multiclass_nms
 from mmdet.models import DETECTORS, BaseDetector
 
-from .datasets import COCO_SEEN_48_17, LVIS_V1_SEEN_866_337, LVISV1GZSLDataset
+from ..datasets import COCO_SEEN_48_17, LVIS_V1_SEEN_866_337, LVISV1GZSLDataset
 from .denseclip import CLIPDistiller
-from .model import Classifier
+from ..cafe import Classifier
 
 
 @DETECTORS.register_module()

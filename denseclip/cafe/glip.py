@@ -2,13 +2,14 @@ from typing import List, Optional, Tuple
 
 import einops
 import einops.layers.torch
+import todd.reproduction
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from mmcv.runner import BaseModule, ModuleList
 from timm.models.layers import DropPath
 
-from .mmdet_patch import DyHeadBlock
+from .mmdet_patch import BFP, DyHeadBlock
 
 
 class Fusion(BaseModule):
@@ -53,7 +54,7 @@ class Fusion(BaseModule):
             self._out_l_proj = nn.Linear(embed_dim, l_dim)
             self._gamma_l = nn.Parameter(torch.ones((l_dim)) / avg_factor, requires_grad=True)
 
-        self._dropout = dropout
+        self._dropout = nn.Dropout(dropout)
         self._drop_path = DropPath(drop_path) if drop_path > 0. else nn.Identity()
         self._bi_direct = bi_direct
 
@@ -101,7 +102,7 @@ class Fusion(BaseModule):
             l_weights = einops.repeat(l_weights, 'b l -> (b num_heads) 1 l', num_heads=self._num_heads)
             attn_weights_v = attn_weights_v * l_weights
             attn_weights_v = attn_weights_v / attn_weights_v.sum(dim=-1, keepdim=True)
-        attn_probs_v = F.dropout(attn_weights_v, p=self._dropout, training=self.training)
+        attn_probs_v = self._dropout(attn_weights_v)
         value_l_states = einops.rearrange(self._values_l_proj(l), 'b l (num_heads head_dim) -> (b num_heads) l head_dim', num_heads=self._num_heads, head_dim=self._head_dim)
         attn_output_v = torch.einsum('b n l, b l c -> b n c', attn_probs_v, value_l_states)
         attn_output_v = einops.rearrange(attn_output_v, '(b num_heads) n head_dim -> b n (num_heads head_dim)', num_heads=self._num_heads, head_dim=self._head_dim)
@@ -116,7 +117,7 @@ class Fusion(BaseModule):
                 max=50000 if self._clamp_max_for_overflow else None,
             )  # Do not increase 50000, data type half has quite limited range
             attn_weights_l = attn_weights.softmax(dim=-1)
-            attn_probs_l = F.dropout(attn_weights_l, p=self._dropout, training=self.training)
+            attn_probs_l = self._dropout(attn_weights_l)
             value_v_states = einops.rearrange(self._values_v_proj(v), 'b hw (num_heads head_dim) -> (b num_heads) hw head_dim', num_heads=self._num_heads, head_dim=self._head_dim)
             attn_output_l = torch.einsum('b l n, b n c -> b l c', attn_probs_l, value_v_states)
             attn_output_l = einops.rearrange(attn_output_l, '(b num_heads) l head_dim -> b l (num_heads head_dim)', num_heads=self._num_heads, head_dim=self._head_dim)
@@ -179,3 +180,24 @@ class GLIP(BaseModule):
             return bsf, multi_layer_masks
         assert all(masks is None for masks in multi_layer_masks)
         return bsf
+
+
+class GLIPNeck(BFP):
+    def __init__(
+        self, 
+        *args, 
+        refine_layers: int, 
+        refine_embedding_dim: int,
+        **kwargs,
+    ):
+        super().__init__(*args, refine_type=None, **kwargs)
+        self.refine_type = 'fusion_dyhead'
+        self.refine = GLIP(
+            channels=self.in_channels,
+            num_layers=refine_layers,
+            embedding_dim=refine_embedding_dim,
+        )
+
+    @todd.reproduction.set_seed_temp('GLIPNeck')
+    def init_weights(self):
+        return super().init_weights()

@@ -6,7 +6,7 @@ from mmcv.runner import BaseModule
 from mmdet.core import bbox2result
 from mmdet.models import DETECTORS
 
-from .model import Classifier
+from .cafe import Classifier
 
 
 @DETECTORS.register_module()

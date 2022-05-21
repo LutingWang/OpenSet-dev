@@ -2,60 +2,16 @@ from typing import List, Optional, Tuple
 
 from mmdet.core.mask.structures import BitmapMasks
 import torch
+import todd.reproduction
 from mmcv import ConfigDict
 from mmcv.runner import BaseModule, ModuleList
 from mmdet.models import DETECTORS, NECKS, FPN, TwoStageDetector
 
-from .datasets import LVIS_V1_SEEN_866_337
-from .mil_classifiers import BaseMILClassifier, MIL_CLASSIFIERS, ClassificationResult
+from ..datasets import LVIS_V1_SEEN_866_337
+from .classifiers import BaseMILClassifier, MIL_CLASSIFIERS, ClassificationResult
 from .mmdet_patch import BFP, TwoStageDetector
-from .glip import GLIP
-from .plv import PLV
-
-
-class PLVNeck(BaseModule):
-    def __init__(
-        self, 
-        *args, 
-        channels: List[int], 
-        embedding_dim: int,
-        hidden_dim: int,
-        **kwargs,
-    ):
-        super().__init__(*args, **kwargs)
-        self._plvs = ModuleList([
-            PLV(v_dim=channel, l_dim=embedding_dim, hidden_dim=hidden_dim)
-            for channel in channels
-        ])
-
-    def forward(
-        self, 
-        x: Tuple[torch.Tensor], 
-        class_embeddings: torch.Tensor, 
-        logits_weight: torch.Tensor,
-    ):
-        x = tuple(
-            plv(feat, class_embeddings, logits_weight) 
-            for plv, feat in zip(self._plvs, x)
-        )
-        return x
-
-
-class GLIPNeck(BFP):
-    def __init__(
-        self, 
-        *args, 
-        refine_layers: int, 
-        refine_embedding_dim: int,
-        **kwargs,
-    ):
-        super().__init__(*args, refine_type=None, **kwargs)
-        self.refine_type = 'fusion_dyhead'
-        self.refine = GLIP(
-            channels=self.in_channels,
-            num_layers=refine_layers,
-            embedding_dim=refine_embedding_dim,
-        )
+from .glip import GLIPNeck
+from .plv import PLVNeck
 
 
 @NECKS.register_module()
@@ -188,7 +144,6 @@ class CAFENeck(BaseModule):
         x, (multi_layer_masks,) = self._glip(
             x, class_embeddings, logits_weight=logits_weight,
         )
-        import ipdb; ipdb.set_trace()
         glip_losses = {}
         return x, {**mil_losses, **glip_losses}
 
@@ -227,18 +182,19 @@ class CAFE(TwoStageDetector):
         **kwargs,
     ):
         x = self.backbone(img)
-        x = self.neck.forward_train(x, gt_labels, gt_masks, image_embeddings)
+        x, cafe_losses = self.neck.forward_train(x, gt_labels, gt_masks, image_embeddings)
 
         proposal_cfg = self.train_cfg.get('rpn_proposal', self.test_cfg.rpn)
-        rpn_losses, proposal_list = self.rpn_head.forward_train(
-            x, img_metas, gt_bboxes, gt_labels=None,
-            gt_bboxes_ignore=None,
-            proposal_cfg=proposal_cfg, **kwargs,
-        )
+        with todd.reproduction.set_seed_temp(3407):
+            rpn_losses, proposal_list = self.rpn_head.forward_train(
+                x, img_metas, gt_bboxes, gt_labels=None,
+                gt_bboxes_ignore=None,
+                proposal_cfg=proposal_cfg, **kwargs,
+            )
 
-        roi_losses = self.roi_head.forward_train(
-            x, img_metas, proposal_list, gt_bboxes, gt_labels,
-            None, gt_masks, **kwargs,
-        )
+            roi_losses = self.roi_head.forward_train(
+                x, img_metas, proposal_list, gt_bboxes, gt_labels,
+                None, gt_masks, **kwargs,
+            )
 
-        return {**rpn_losses, **roi_losses}
+        return {**cafe_losses, **rpn_losses, **roi_losses}

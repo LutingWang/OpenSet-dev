@@ -65,36 +65,36 @@ class BFP(_BFP):
             return tuple(outs), args
 
 
-class ResNet(_ResNet):
-    def __init__(self, *args, custom_plugins: Optional[ConfigDict] = None, **kwargs):
-        super().__init__(*args, **kwargs)
-        self._custom_plugins = (
-            None if custom_plugins is None else
-            self._make_custom_plugins(**custom_plugins)
-        )
+# class ResNet(_ResNet):
+#     def __init__(self, *args, custom_plugins: Optional[ConfigDict] = None, **kwargs):
+#         super().__init__(*args, **kwargs)
+#         self._custom_plugins = (
+#             None if custom_plugins is None else
+#             self._make_custom_plugins(**custom_plugins)
+#         )
 
-    @abstractmethod
-    def _make_custom_plugins(self, *args, **kwargs) -> nn.Module:
-        pass
+#     @abstractmethod
+#     def _make_custom_plugins(self, *args, **kwargs) -> nn.Module:
+#         pass
 
-    def forward(self, x: torch.Tensor, *args) -> torch.Tensor:
-        if self.deep_stem:
-            x = self.stem(x)
-        else:
-            x = self.conv1(x)
-            x = self.norm1(x)
-            x = self.relu(x)
-        x = self.maxpool(x)
-        outs = []
-        for i, layer_name in enumerate(self.res_layers):
-            res_layer = getattr(self, layer_name)
-            x = res_layer(x)
-            if self._custom_plugins is not None:
-                plugin = self._custom_plugins[i]
-                x = plugin(x, *args)
-            if i in self.out_indices:
-                outs.append(x)
-        return tuple(outs)
+#     def forward(self, x: torch.Tensor, *args) -> torch.Tensor:
+#         if self.deep_stem:
+#             x = self.stem(x)
+#         else:
+#             x = self.conv1(x)
+#             x = self.norm1(x)
+#             x = self.relu(x)
+#         x = self.maxpool(x)
+#         outs = []
+#         for i, layer_name in enumerate(self.res_layers):
+#             res_layer = getattr(self, layer_name)
+#             x = res_layer(x)
+#             if self._custom_plugins is not None:
+#                 plugin = self._custom_plugins[i]
+#                 x = plugin(x, *args)
+#             if i in self.out_indices:
+#                 outs.append(x)
+#         return tuple(outs)
 
 
 @DETECTORS.register_module(force=True)
