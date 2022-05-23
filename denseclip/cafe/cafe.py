@@ -66,12 +66,9 @@ class CAFENeck(BaseModule):
         )
 
         self._glip = GLIPNeck(
-            in_channels=out_channels,
-            num_levels=num_outs,
+            channels=out_channels,
             refine_level=glip_refine_level,
             refine_layers=glip_refine_layers,
-            refine_embedding_dim=embedding_dim,
-            norm_cfg=norm_cfg,
             init_cfg=init_cfg,
         )
 
@@ -141,10 +138,9 @@ class CAFENeck(BaseModule):
 
         x = self._plv(x, class_embeddings, logits_weight=None)
         x = self._fpn(x)
-        x, (multi_layer_masks,) = self._glip(
-            x, class_embeddings, logits_weight=logits_weight,
+        x, glip_losses = self._glip.forward_train(
+            x, class_embeddings, logits_weight,
         )
-        glip_losses = {}
         return x, {**mil_losses, **glip_losses}
 
     def forward_test(self, x: List[torch.Tensor]) -> List[torch.Tensor]:
@@ -155,8 +151,8 @@ class CAFENeck(BaseModule):
         logits_weight = classification_result.logits_weight
         x = self._plv(x, class_embeddings, logits_weight=None)
         x = self._fpn(x)
-        x = self._glip(
-            x, class_embeddings, logits_weight=logits_weight,
+        x = self._glip.forward_test(
+            x, class_embeddings, logits_weight,
         )
         return x
 
