@@ -102,7 +102,12 @@ model = dict(
                         type='WarmupScheduler',
                         tensor_names=['loss_bbox_kd'],
                         iter_=200)
-                ]))),
+                ])),
+        init_cfg=[
+            dict(type='Xavier', layer='Linear'),
+            dict(type='Normal', layer='Conv2d', std=0.01),
+        ]
+    ),
     train_cfg=dict(
         rpn=dict(
             assigner=dict(

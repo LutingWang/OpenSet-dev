@@ -43,22 +43,16 @@ class ViLDBaseBBoxHead(ConvFCBBoxHead):
             num_reg_fcs=0,
             **kwargs,
         )
+        self.register_buffer('_class_embeddings', class_embeddings, persistent=False)
+
         self._unseen_ids = [
             i for i in range(self.num_classes) 
             if i not in seen_ids
         ]
-        self._class_embeddings = nn.Parameter(
-            class_embeddings, requires_grad=False,
-        )
-
         self.fc_cls = nn.Sequential(
             nn.Linear(self.fc_out_channels, self.embedding_dim),
             Classifier(tau=(0.007, 0.01)),
         )
-
-        # do not put into init_weight, since PretrainedInit will skip it
-        nn.init.xavier_uniform_(self.fc_cls[0].weight)
-        nn.init.constant_(self.fc_cls[0].bias, 0)
 
     @property
     def embedding_dim(self) -> int:
@@ -88,6 +82,9 @@ class ViLDTextBBoxHead(ViLDBaseBBoxHead):
         self._bg_class_embedding = nn.Parameter(
             self._class_embeddings[[0]], requires_grad=True,
         )
+    
+    def init_weights(self):
+        super().init_weights()
         nn.init.xavier_uniform_(self._bg_class_embedding)
 
     @property
@@ -146,17 +143,12 @@ class ViLDEnsembleRoIHead(StandardRoIHead):
     def __init__(self, *args, bbox_head: ConfigDict, ensemble_head: ConfigDict, **kwargs):
         super().__init__(*args, bbox_head=bbox_head, **kwargs)
         ensemble_head = HEADS.build(ensemble_head, default_args=bbox_head)
-        ensemble_mask = nn.Parameter(
-            torch.ones(ensemble_head.num_classes + 1) / 3, 
-            requires_grad=False,
-        )
-        ensemble_mask[ensemble_head._seen_ids] *= 2
+        ensemble_head = cast(ViLDImageBBoxHead, ensemble_head)
         self._ensemble_head = ensemble_head
-        self._ensemble_mask = ensemble_mask
-
-        self._ensemble_head.init_weights()
-        if self.with_mask:
-            self.mask_head.init_weights()
+        ensemble_mask = torch.ones(ensemble_head.num_classes + 1) / 3
+        ensemble_mask[ensemble_head._seen_ids] *= 2
+        self.register_buffer('_ensemble_mask', ensemble_mask, persistent=False)
+        self.init_weights()
 
     @property
     def with_mask(self):

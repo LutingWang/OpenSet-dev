@@ -1,7 +1,7 @@
 import os
 import os.path as osp
 
-import todd
+import todd.logger
 import torch
 from mmcv import Config
 from mmcv.runner import TextLoggerHook
