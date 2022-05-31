@@ -72,13 +72,14 @@ class Classifier(BaseModule):
         if self._bias is not None:
             x = x + self._bias
         return x
+
+
 class BaseMILClassifier(Classifier):
     def __init__(
         self,
         *args,
         channels: int,
         embedding_dim: int,
-        logits_weight: bool = False,
         kappa: int = 35, 
         loss_mil: ConfigDict = None,
         loss_image_kd: ConfigDict = None,
@@ -88,7 +89,6 @@ class BaseMILClassifier(Classifier):
         assert kappa >= 10, f'kappa must be >= 10, but got {kappa}.'
         self._channels = channels
         self._embedding_dim = embedding_dim
-        self._logits_weight = logits_weight
         self._kappa = kappa
         self._adapt = self._build_adapt()
         self._loss_mil = None if loss_mil is None else LOSSES.build(loss_mil)
@@ -103,46 +103,80 @@ class BaseMILClassifier(Classifier):
     def _build_adapt(self) -> BaseModule:
         pass
 
-    def forward(
-        self, 
-        x: torch.Tensor, 
-        class_embeddings: torch.Tensor,
-    ) -> ClassificationResult:
+    def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         image_features = self._adapt(x)
         image_features = F.normalize(image_features)
-        self.set_weight(class_embeddings, norm=False)
         class_logits = super().forward(image_features, norm=False)
-        values, indices = torch.topk(class_logits, k=self._kappa, dim=-1)
+        return image_features, class_logits
+
+    def _topk(
+        self,
+        class_embeddings: torch.Tensor,
+        class_logits: torch.Tensor,
+    ) -> Tuple[torch.Tensor, ...]:
+        class_logits, indices = torch.topk(class_logits, k=self._kappa, dim=-1)
         if class_embeddings.ndim == 2:
-            class_embeddings = class_embeddings[indices]
-        elif class_embeddings.ndim == 3:
+            return class_embeddings[indices], class_logits, indices
+        if class_embeddings.ndim == 3:
             gather_indices = einops.repeat(
                 indices, 'b n -> b n c', c=class_embeddings.shape[-1],
             )
             class_embeddings = torch.gather(
                 class_embeddings, 1, gather_indices,
             )
-        else:
-            raise ValueError(f'class_embeddings.ndim must be 2 or 3, but got {class_embeddings.shape}')
-        logits_weight = values.detach().sigmoid() if self._logits_weight else None
-        return ClassificationResult(class_embeddings, image_features, class_logits, logits_weight, indices)
+            return class_embeddings, class_logits, indices
+        raise ValueError(f'class_embeddings.ndim must be 2 or 3, but got {class_embeddings.shape}')
 
-    def losses(
+    def _add_gts(
         self,
-        result: ClassificationResult,
+        topk_class_embeddings: torch.Tensor,
+        topk_class_logits: torch.Tensor,
+        topk_indices: torch.Tensor,
+        class_embeddings: torch.Tensor,
+        class_logits: torch.Tensor,
+        mil_labels: torch.Tensor, 
+    ):
+        for topk_class_embedding, topk_class_logit, topk_index, class_logit, mil_label in zip(
+            topk_class_embeddings, topk_class_logits, topk_indices, class_logits, mil_labels,
+        ):
+            gt_index, = mil_label.index_put((topk_index,), mil_label.new_zeros([])).nonzero(as_tuple=True)
+            gt_index = gt_index[:topk_index.shape[0] // 10]
+            num_gts = gt_index.shape[0]
+            if num_gts == 0:
+                continue
+            topk_class_embedding[-num_gts:] = class_embeddings[gt_index]
+            topk_class_logit[-num_gts:] = class_logit[gt_index]
+            topk_index[-num_gts:] = gt_index
+
+    def forward_train(
+        self, 
+        x: torch.Tensor, 
+        class_embeddings: torch.Tensor,
         mil_labels: torch.Tensor,
-        clip_image_features: torch.Tensor,
-    ) -> Dict[str, torch.Tensor]:
-        loss_mil = self._loss_mil(
-            result.class_logits, 
-            mil_labels,
-        ) * self._loss_scheduler
-        loss_image_kd = self._loss_image_kd(
-            result.image_features, 
-            F.normalize(clip_image_features), 
+        gt_image_features: torch.Tensor,
+    ) -> Tuple[torch.Tensor, torch.Tensor, Dict[str, torch.Tensor], torch.Tensor]:
+        self.set_weight(class_embeddings, norm=False)
+        image_features, class_logits = self.forward(x)
+        topk_class_embeddings, topk_class_logits, topk_indices = self._topk(
+            class_embeddings, class_logits.detach(),
         )
+        self._add_gts(topk_class_embeddings, topk_class_logits, topk_indices, class_embeddings, class_logits.detach(), mil_labels)
+        loss_mil = self._loss_mil(class_logits, mil_labels) * self._loss_scheduler
+        loss_image_kd = self._loss_image_kd(image_features, F.normalize(gt_image_features))
         losses = dict(loss_mil=loss_mil, loss_image_kd=loss_image_kd)
-        return losses
+        return topk_class_embeddings, topk_class_logits, losses, topk_indices
+
+    def forward_test(
+        self, 
+        x: torch.Tensor, 
+        class_embeddings: torch.Tensor,
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        self.set_weight(class_embeddings, norm=False)
+        _, class_logits = self.forward(x)
+        topk_class_embeddings, topk_class_logits, _ = self._topk(
+            class_embeddings, class_logits,
+        )
+        return topk_class_embeddings, topk_class_logits
 
 
 @MIL_CLASSIFIERS.register_module()

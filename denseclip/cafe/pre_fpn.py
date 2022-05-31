@@ -35,7 +35,14 @@ class PLV(BaseModule):
             nn.ReLU()
         )
 
-    def forward(self, v: torch.Tensor, l: torch.Tensor, logits_weight: Optional[torch.Tensor] = None) -> torch.Tensor:
+    def forward(
+        self, 
+        v: torch.Tensor, 
+        l: torch.Tensor, 
+        *,
+        v_weights: Optional[torch.Tensor] = None,
+        l_weights: Optional[torch.Tensor] = None,
+    ) -> torch.Tensor:
         v_feats = self._v_proj(v)
         if l.ndim > 2:
             b, *_, d = l.shape
@@ -72,10 +79,10 @@ class PreFPN(BaseModule):
         self, 
         x: Tuple[torch.Tensor], 
         class_embeddings: torch.Tensor, 
-        logits_weight: torch.Tensor,
+        class_weights: torch.Tensor,
     ):
         x = tuple(
-            plv(feat, class_embeddings, logits_weight) 
+            plv(feat, class_embeddings, l_weights=class_weights) 
             for plv, feat in zip(self._plvs, x)
         )
         return x

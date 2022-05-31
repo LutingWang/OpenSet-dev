@@ -28,7 +28,6 @@ model = dict(
         mil_classifier=dict(
             type='DyHeadClassifier',
             kappa=35,
-            logits_weight=True,
             tau=0.07,
             loss_mil=dict(type='FocalWithLogitsLoss', weight=32),
             loss_image_kd=dict(type='L1Loss', weight=256)),

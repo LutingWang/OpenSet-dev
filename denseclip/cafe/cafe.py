@@ -87,72 +87,43 @@ class CAFENeck(BaseModule):
             return self._class_embeddings[self._seen_ids]
         return self._class_embeddings
 
-    def _add_gts(
-        self,
-        classification_result: ClassificationResult, 
-        mil_labels: torch.Tensor, 
-        all_class_embeddings: torch.Tensor,
-    ):
-        for i in range(mil_labels.shape[0]):
-            mil_label: torch.Tensor = mil_labels[i]
-            class_embeddings: torch.Tensor = classification_result.class_embeddings[i]
-            indices: torch.Tensor = classification_result.indices[i]
-            gt_inds, = mil_label.index_put((indices,), mil_label.new_zeros([])).nonzero(as_tuple=True)
-            gt_inds = gt_inds[:indices.shape[0] // 10]
-            num_gts = gt_inds.shape[0]
-            if num_gts == 0:
-                continue
-            gt_class_embeddings = all_class_embeddings[gt_inds]
-            class_embeddings[-num_gts:] = gt_class_embeddings
-            indices[-num_gts:] = gt_inds
-            if classification_result.logits_weight is not None:
-                logits_weight: torch.Tensor = classification_result.logits_weight[i]
-                class_logits: torch.Tensor = classification_result.class_logits[i]
-                logits_weight[-num_gts:] = class_logits[gt_inds].detach().sigmoid()
-
     def forward_train(
         self, 
         x: List[torch.Tensor], 
         gt_labels: List[torch.Tensor], 
         gt_masks: List[BitmapMasks],
-        clip_image_features: torch.Tensor,
+        gt_image_features: torch.Tensor,
     ):
-        mil_labels = clip_image_features.new_zeros((len(gt_labels), len(self._seen_ids)))
+        mil_labels = gt_image_features.new_zeros((len(gt_labels), len(self._seen_ids)))
         for i, gt_label in enumerate(gt_labels):
             mil_label = self._seen_ids_mapper[gt_label]
             assert mil_label.ge(0).all(), gt_label
             mil_labels[i, mil_label] = 1.0
 
-        class_embeddings = self.class_embeddings
-        classification_result: ClassificationResult = self._mil_classifier(
-            x[-1], class_embeddings,
+        class_embeddings, class_logits, mil_losses, indices = self._mil_classifier.forward_train(
+            x[-1], self.class_embeddings, mil_labels=mil_labels, 
+            gt_image_features=gt_image_features,
         )
-        mil_losses = self._mil_classifier.losses(
-            classification_result, mil_labels=mil_labels, 
-            clip_image_features=clip_image_features,
-        )
-        self._add_gts(classification_result, mil_labels, class_embeddings)
+        class_weights = class_logits.detach().sigmoid()
 
-        class_embeddings = classification_result.class_embeddings
-        logits_weight = classification_result.logits_weight
+        # gt_masks = gt_masks[indices]
 
-        x = self._pre(x, class_embeddings, logits_weight=None)
+        x = self._pre(x, class_embeddings, class_weights)
         x = self._fpn(x)
-        x, glip_losses = self._post.forward_train(
-            x, class_embeddings, logits_weight,
+        x, post_fpn_losses = self._post.forward_train(
+            x, class_embeddings, class_weights, gt_masks,
         )
-        return x, {**mil_losses, **glip_losses}
+        return x, {**mil_losses, **post_fpn_losses}
 
     def forward_test(self, x: List[torch.Tensor]) -> List[torch.Tensor]:
-        classification_result: ClassificationResult = self._mil_classifier(
+        class_embeddings, class_logits = self._mil_classifier.forward_test(
             x[-1], self.class_embeddings,
         )
-        class_embeddings = classification_result.class_embeddings
-        logits_weight = classification_result.logits_weight
-        x = self._pre(x, class_embeddings, logits_weight=None)
+        class_weights = class_logits.detach().sigmoid()
+        x = self._pre(x, class_embeddings, class_weights)
         x = self._fpn(x)
         x = self._post.forward_test(
-            x, class_embeddings, logits_weight,
+            x, class_embeddings, class_weights,
         )
         return x
 
