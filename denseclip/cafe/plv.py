@@ -37,14 +37,13 @@ class PLV(BaseModule):
 
     def forward(self, v: torch.Tensor, l: torch.Tensor, logits_weight: Optional[torch.Tensor] = None) -> torch.Tensor:
         v_feats = self._v_proj(v)
-        if l.ndim == 2:
-            l_feats = self._l_proj(l)
-            l_feats = einops.reduce(l_feats, 'c d -> 1 d 1 1', reduction='mean')
-        elif l.ndim == 3:
-            b, c, d = l.shape
-            l_feats = einops.rearrange(l, 'b c d -> (b c) d')
-            l_feats = self._l_proj(l_feats)
-            l_feats = einops.reduce(l_feats, '(b c) d -> b d 1 1', b=b, c=c, reduction='mean')
+        if l.ndim > 2:
+            b, *_, d = l.shape
+            l = l.view(-1, d)
+        else:
+            b = 1
+        l_feats = self._l_proj(l)
+        l_feats = einops.reduce(l_feats, '(b c) d -> b d 1 1', b=b, reduction='mean')
         v_feats = self._out_v_proj(v_feats * l_feats)
         # v_feats = F.normalize(v + v_feats)
         return v + v_feats

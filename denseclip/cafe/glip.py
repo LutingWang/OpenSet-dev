@@ -1,14 +1,13 @@
 from typing import Dict, List, Optional, Tuple
 
+from mmcv.runner import BaseModule, ModuleList
+from timm.models.layers import DropPath
 import einops
 import einops.layers.torch
 import todd.reproduction
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from mmcv import ConfigDict
-from mmcv.runner import BaseModule, ModuleList
-from timm.models.layers import DropPath
 
 from .mmdet_patch import BFP, DyHeadBlock
 
@@ -157,27 +156,21 @@ class Fusion(BaseModule):
         return attn_weights
 
 
-class GLIP(BaseModule):
+class Refine(BaseModule):
     def __init__(
         self, 
         *args, 
         channels: int, 
-        num_layers: int = 6, 
+        avg_factor: int, 
+        bi_direct: bool,
         **kwargs,
     ):
         super().__init__(*args, **kwargs)
-        self._channels = channels
-        self._num_layers = num_layers
-
-        self._fuse_layers = ModuleList(
-            Fusion(
-                avg_factor=num_layers, 
-                bi_direct=(l != num_layers - 1),
-            ) for l in range(num_layers)
+        self._fusion = Fusion(
+            avg_factor=avg_factor, 
+            bi_direct=bi_direct,
         )
-        self._dyhead_layers = ModuleList(
-            DyHeadBlock(channels, channels) for _ in range(num_layers)
-        )
+        self._dyhead = DyHeadBlock(channels, channels)
 
     def forward_train(
         self, 
@@ -185,16 +178,12 @@ class GLIP(BaseModule):
         class_embeddings: torch.Tensor, 
         class_weights: Optional[torch.Tensor] = None,
         gt_masks: Optional[torch.Tensor] = None,
-    ) -> Tuple[torch.Tensor, Dict[str, List[torch.Tensor]]]:
-        multi_layer_masks = []
-        for fuse_layer, dyhead_layer in zip(self._fuse_layers, self._dyhead_layers):
-            bsf, class_embeddings, masks = fuse_layer(
-                bsf, class_embeddings, l_weights=class_weights, with_masks=True,
-            )
-            multi_layer_masks.append(masks)
-            bsf = dyhead_layer(bsf)
-        assert class_embeddings is None
-        return bsf, {}
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        bsf, class_embeddings, masks = self._fusion(
+            bsf, class_embeddings, l_weights=class_weights, with_masks=True,
+        )
+        bsf = self._dyhead(bsf)
+        return bsf, class_embeddings, bsf.new_zeros([], requires_grad=True)
 
     def forward_test(
         self, 
@@ -202,13 +191,11 @@ class GLIP(BaseModule):
         class_embeddings: torch.Tensor, 
         class_weights: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
-        for fuse_layer, dyhead_layer in zip(self._fuse_layers, self._dyhead_layers):
-            bsf, class_embeddings, _ = fuse_layer(
-                bsf, class_embeddings, l_weights=class_weights, with_masks=False,
-            )
-            bsf = dyhead_layer(bsf)
-        assert class_embeddings is None
-        return bsf
+        bsf, class_embeddings, _ = self._fusion(
+            bsf, class_embeddings, l_weights=class_weights, with_masks=False,
+        )
+        bsf = self._dyhead(bsf)
+        return bsf, class_embeddings
 
 
 class GLIPNeck(BaseModule):
@@ -222,9 +209,12 @@ class GLIPNeck(BaseModule):
     ):
         super().__init__(*args, **kwargs)
         self._refine_level = refine_level
-        self._refine = GLIP(
-            channels=channels,
-            num_layers=refine_layers,
+        self._refines: List[Refine] = ModuleList(
+            Refine(
+                channels=channels,
+                avg_factor=refine_layers,
+                bi_direct=(l != refine_layers - 1),
+            ) for l in range(refine_layers)
         )
 
     @todd.reproduction.set_seed_temp('GLIPNeck')
@@ -258,9 +248,15 @@ class GLIPNeck(BaseModule):
         gt_masks: Optional[torch.Tensor] = None,
     ) -> Tuple[torch.Tensor, Dict[str, List[torch.Tensor]]]:
         bsf = self._gather(feats)
-        bsf, losses = self._refine.forward_train(bsf, class_embeddings, class_weights, gt_masks)
+
+        losses = []
+        for refine in self._refines:
+            bsf, class_embeddings, loss = refine.forward_train(bsf, class_embeddings, class_weights, gt_masks)
+            losses.append(loss)
+        assert class_embeddings is None
+
         feats = self._scatter(feats, bsf)
-        return feats, losses
+        return feats, dict(glip_losses=losses)
 
     def forward_test(
         self, 
@@ -269,6 +265,10 @@ class GLIPNeck(BaseModule):
         class_weights: Optional[torch.Tensor] = None, 
     ) -> Tuple[torch.Tensor]:
         bsf = self._gather(feats)
-        bsf = self._refine.forward_test(bsf, class_embeddings, class_weights)
+
+        for refine in self._refines:
+            bsf, class_embeddings = refine.forward_test(bsf, class_embeddings, class_weights)
+        assert class_embeddings is None
+
         feats = self._scatter(feats, bsf)
         return feats
