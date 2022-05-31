@@ -49,7 +49,7 @@ class PLV(BaseModule):
         return v + v_feats
 
 
-class PLVNeck(BaseModule):
+class PreFPN(BaseModule):
     def __init__(
         self, 
         *args, 

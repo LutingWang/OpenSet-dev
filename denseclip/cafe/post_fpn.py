@@ -9,7 +9,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from .mmdet_patch import BFP, DyHeadBlock
+from .mmdet_patch import DyHeadBlock
 
 
 class Fusion(BaseModule):
@@ -198,7 +198,7 @@ class Refine(BaseModule):
         return bsf, class_embeddings
 
 
-class GLIPNeck(BaseModule):
+class PostFPN(BaseModule):
     def __init__(
         self, 
         *args,

@@ -9,9 +9,9 @@ from mmdet.models import DETECTORS, NECKS, FPN, TwoStageDetector
 
 from ..datasets import LVIS_V1_SEEN_866_337
 from .classifiers import BaseMILClassifier, MIL_CLASSIFIERS, ClassificationResult
-from .mmdet_patch import BFP, TwoStageDetector
-from .glip import GLIPNeck
-from .plv import PLVNeck
+from .mmdet_patch import TwoStageDetector
+from .post_fpn import PostFPN
+from .pre_fpn import PreFPN
 
 
 @NECKS.register_module()
@@ -51,7 +51,7 @@ class CAFENeck(BaseModule):
             ),
         )
 
-        self._plv = PLVNeck(
+        self._pre = PreFPN(
             channels=in_channels, 
             embedding_dim=embedding_dim,
             hidden_dim=plv_channels,
@@ -65,7 +65,7 @@ class CAFENeck(BaseModule):
             init_cfg=init_cfg,
         )
 
-        self._glip = GLIPNeck(
+        self._post = PostFPN(
             channels=out_channels,
             refine_level=glip_refine_level,
             refine_layers=glip_refine_layers,
@@ -136,9 +136,9 @@ class CAFENeck(BaseModule):
         class_embeddings = classification_result.class_embeddings
         logits_weight = classification_result.logits_weight
 
-        x = self._plv(x, class_embeddings, logits_weight=None)
+        x = self._pre(x, class_embeddings, logits_weight=None)
         x = self._fpn(x)
-        x, glip_losses = self._glip.forward_train(
+        x, glip_losses = self._post.forward_train(
             x, class_embeddings, logits_weight,
         )
         return x, {**mil_losses, **glip_losses}
@@ -149,9 +149,9 @@ class CAFENeck(BaseModule):
         )
         class_embeddings = classification_result.class_embeddings
         logits_weight = classification_result.logits_weight
-        x = self._plv(x, class_embeddings, logits_weight=None)
+        x = self._pre(x, class_embeddings, logits_weight=None)
         x = self._fpn(x)
-        x = self._glip.forward_test(
+        x = self._post.forward_test(
             x, class_embeddings, logits_weight,
         )
         return x
