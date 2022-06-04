@@ -17,7 +17,7 @@ from mmcv.parallel import DataContainer as DC
 from mmdet.datasets import DATASETS, PIPELINES
 from mmdet.datasets.pipelines import Compose
 from mmdet.models import DETECTORS, BaseDetector
-from todd.utils import BBoxes
+from todd import BBoxesXYXY
 
 from .utils import has_debug_flag
 
@@ -71,7 +71,7 @@ class LoadImageFromRegions:
         bboxes = results[bbox_field]
         if has_debug_flag(3):
             bboxes = bboxes[:5]
-        bboxes = BBoxes(torch.as_tensor(bboxes))
+        bboxes = BBoxesXYXY(bboxes)
         # bboxes = bboxes[bboxes.areas > 32 * 32]
 
         if bboxes.empty:
@@ -81,7 +81,7 @@ class LoadImageFromRegions:
                 bboxes_ = bboxes
             else:
                 results = self._transforms(results)
-                bboxes_ = BBoxes(torch.as_tensor(results[bbox_field]))
+                bboxes_ = BBoxesXYXY(results[bbox_field])
 
             if 'img_fields' not in results or len(results['img_fields']) == 0:
                 filename = os.path.join(

@@ -11,7 +11,7 @@ from mmcv.parallel import DataContainer as DC
 from mmdet.datasets import PIPELINES
 from mmdet.datasets.pipelines.loading import LoadImageFromFile
 from todd.datasets import build_access_layer
-from todd.utils import BBoxes
+from todd import BBoxesXYXY
 
 from ..utils import has_debug_flag
 
@@ -57,7 +57,7 @@ class LoadPthEmbeddings:
         bboxes = cast(np.ndarray, bboxes)
         bbox_embeddings = cast(np.ndarray, bbox_embeddings)
         if self._min_bbox_area is not None:
-            indices = BBoxes(bboxes).areas > self._min_bbox_area
+            indices = BBoxesXYXY(bboxes).areas > self._min_bbox_area
             bboxes = bboxes[indices]
             bbox_embeddings = bbox_embeddings[indices]
         if self._sampling_ratio is not None:

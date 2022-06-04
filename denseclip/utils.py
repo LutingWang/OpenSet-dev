@@ -1,15 +1,15 @@
 import os
 import os.path as osp
 
-import todd.logger
 import torch
 from mmcv import Config
 from mmcv.runner import TextLoggerHook
 from mmcv.cnn import NORM_LAYERS
+from todd import get_logger
 
 
 def odps_init():
-    logger = todd.logger.get_logger()
+    logger = get_logger()
     logger.debug("ODPS initializing.")
 
     def _dump_log(*args, **kwargs):
