@@ -51,24 +51,17 @@ model = dict(
             type='CrossEntropyLoss', use_sigmoid=True, loss_weight=1.0),
         loss_bbox=dict(type='L1Loss', loss_weight=1.0)),
     roi_head=dict(
-        type='ViLDEnsembleRoIHead',
+        type='ViLDRoIHead',
         bbox_roi_extractor=dict(
             type='SingleRoIExtractor',
             roi_layer=dict(type='RoIAlign', output_size=7, sampling_ratio=0),
             out_channels=256,
             featmap_strides=[4, 8, 16, 32]),
-        text_bbox_head=dict(
+        bbox_head=dict(
             type='ViLDTextBBoxHead',
             num_classes=1203,
             norm_cfg=dict(type='SyncBN', requires_grad=True),
             reg_class_agnostic=True,
-            loss_bbox=dict(type='L1Loss', loss_weight=1.0),
-            class_embeddings='data/lvis_v1/prompt/detpro_ViT-B-32.pt'),
-        image_bbox_head=dict(
-            type='ViLDImageBBoxHead',
-            num_classes=1203,
-            with_reg=False,
-            norm_cfg=dict(type='SyncBN', requires_grad=True),
             loss_bbox=dict(type='L1Loss', loss_weight=1.0),
             class_embeddings='data/lvis_v1/prompt/detpro_ViT-B-32.pt'),
         mask_roi_extractor=dict(

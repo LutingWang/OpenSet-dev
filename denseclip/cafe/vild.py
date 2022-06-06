@@ -85,7 +85,9 @@ class ViLDBaseBBoxHead(ConvFCBBoxHead):
 
     @property
     def class_embeddings(self) -> torch.Tensor:
-        bg_class_embeddings = F.normalize(self._bg_class_embedding) if self._bg_class_embedding_trainable else self._bg_class_embedding
+        bg_class_embeddings = self._bg_class_embedding
+        if self._bg_class_embedding_trainable:
+            bg_class_embeddings = F.normalize(bg_class_embeddings)
         return torch.cat([self._class_embeddings, bg_class_embeddings], dim=0)
 
 
@@ -112,7 +114,7 @@ class ViLDTextBBoxHead(ViLDBaseBBoxHead):
 @DETECTORS.register_module()
 class ViLDImageBBoxHead(ViLDBaseBBoxHead):
     def __init__(self, *args, **kwargs):
-        super().__init__(*args, with_reg=False, bg_class_embedding_trainable=False, **kwargs)
+        super().__init__(*args, bg_class_embedding_trainable=False, **kwargs)
 
     def forward(self, *args, **kwargs) -> Tuple[torch.Tensor, torch.Tensor]:
         self.classifier.set_weight(None if self.training else self.class_embeddings, norm=False)
