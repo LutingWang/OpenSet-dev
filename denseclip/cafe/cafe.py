@@ -100,10 +100,12 @@ class CAFENeck(BaseModule):
             assert mil_label.ge(0).all(), gt_label
             mil_labels[i, mil_label] = 1.0
 
-        class_embeddings, class_logits, mil_losses, indices = self._mil_classifier.forward_train(
-            x[-1], self.class_embeddings, mil_labels=mil_labels, 
+        class_embeddings = self.class_embeddings
+        class_logits, indices, mil_losses = self._mil_classifier.forward_train(
+            x[-1], class_embeddings, mil_labels=mil_labels, 
             gt_image_features=gt_image_features,
         )
+        class_embeddings = self._mil_classifier.index(class_embeddings, indices)
         class_weights = class_logits.detach().sigmoid()
 
         # gt_masks = gt_masks[indices]
@@ -116,9 +118,11 @@ class CAFENeck(BaseModule):
         return x, {**mil_losses, **post_fpn_losses}
 
     def forward_test(self, x: List[torch.Tensor]) -> List[torch.Tensor]:
-        class_embeddings, class_logits = self._mil_classifier.forward_test(
+        class_embeddings = self.class_embeddings
+        class_logits, indices = self._mil_classifier.forward_test(
             x[-1], self.class_embeddings,
         )
+        class_embeddings = self._mil_classifier.index(class_embeddings, indices)
         class_weights = class_logits.detach().sigmoid()
         x = self._pre(x, class_embeddings, class_weights)
         x = self._fpn(x)

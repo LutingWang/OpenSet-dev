@@ -142,10 +142,18 @@ class ViLDDistiller(todd.distillers.SelfDistiller):
                     tensor_names=('', ),
                 ),
             ),
+            adapts=dict(
+                preds_adapted=dict(
+                    type='Linear',
+                    in_features=512,
+                    out_features=512,
+                    tensor_names=['preds_'],
+                ),
+            ),
             losses=dict(
                 vild_image_kd=dict(
                     type='L1Loss',
-                    tensor_names=['preds_', 'targets'],
+                    tensor_names=['preds_adapted', 'targets'],
                     weight=256,
                     norm=True,
                 ),

@@ -109,14 +109,13 @@ class BaseMILClassifier(Classifier):
         class_logits = super().forward(image_features, norm=False)
         return image_features, class_logits
 
-    def _topk(
+    def index(
         self,
         class_embeddings: torch.Tensor,
-        class_logits: torch.Tensor,
-    ) -> Tuple[torch.Tensor, ...]:
-        class_logits, indices = torch.topk(class_logits, k=self._kappa, dim=-1)
+        indices: torch.Tensor,
+    ) -> torch.Tensor:
         if class_embeddings.ndim == 2:
-            return class_embeddings[indices], class_logits, indices
+            return class_embeddings[indices]
         if class_embeddings.ndim == 3:
             gather_indices = einops.repeat(
                 indices, 'b n -> b n c', c=class_embeddings.shape[-1],
@@ -124,27 +123,24 @@ class BaseMILClassifier(Classifier):
             class_embeddings = torch.gather(
                 class_embeddings, 1, gather_indices,
             )
-            return class_embeddings, class_logits, indices
+            return class_embeddings
         raise ValueError(f'class_embeddings.ndim must be 2 or 3, but got {class_embeddings.shape}')
 
     def _add_gts(
         self,
-        topk_class_embeddings: torch.Tensor,
         topk_class_logits: torch.Tensor,
         topk_indices: torch.Tensor,
-        class_embeddings: torch.Tensor,
         class_logits: torch.Tensor,
         mil_labels: torch.Tensor, 
     ):
-        for topk_class_embedding, topk_class_logit, topk_index, class_logit, mil_label in zip(
-            topk_class_embeddings, topk_class_logits, topk_indices, class_logits, mil_labels,
+        for topk_class_logit, topk_index, class_logit, mil_label in zip(
+            topk_class_logits, topk_indices, class_logits, mil_labels,
         ):
             gt_index, = mil_label.index_put((topk_index,), mil_label.new_zeros([])).nonzero(as_tuple=True)
             gt_index = gt_index[:topk_index.shape[0] // 10]
             num_gts = gt_index.shape[0]
             if num_gts == 0:
                 continue
-            topk_class_embedding[-num_gts:] = class_embeddings[gt_index]
             topk_class_logit[-num_gts:] = class_logit[gt_index]
             topk_index[-num_gts:] = gt_index
 
@@ -154,17 +150,15 @@ class BaseMILClassifier(Classifier):
         class_embeddings: torch.Tensor,
         mil_labels: torch.Tensor,
         gt_image_features: torch.Tensor,
-    ) -> Tuple[torch.Tensor, torch.Tensor, Dict[str, torch.Tensor], torch.Tensor]:
+    ) -> Tuple[torch.Tensor, torch.Tensor, Dict[str, torch.Tensor]]:
         self.set_weight(class_embeddings, norm=False)
         image_features, class_logits = self.forward(x)
-        topk_class_embeddings, topk_class_logits, topk_indices = self._topk(
-            class_embeddings, class_logits.detach(),
-        )
-        self._add_gts(topk_class_embeddings, topk_class_logits, topk_indices, class_embeddings, class_logits.detach(), mil_labels)
+        topk_class_logits, topk_indices = torch.topk(class_logits.detach(), k=self._kappa, dim=-1)
+        self._add_gts(topk_class_logits, topk_indices, class_logits.detach(), mil_labels)
         loss_mil = self._loss_mil(class_logits, mil_labels) * self._loss_scheduler
         loss_image_kd = self._loss_image_kd(image_features, F.normalize(gt_image_features))
         losses = dict(loss_mil=loss_mil, loss_image_kd=loss_image_kd)
-        return topk_class_embeddings, topk_class_logits, losses, topk_indices
+        return topk_class_logits, topk_indices, losses
 
     def forward_test(
         self, 
@@ -173,10 +167,8 @@ class BaseMILClassifier(Classifier):
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         self.set_weight(class_embeddings, norm=False)
         _, class_logits = self.forward(x)
-        topk_class_embeddings, topk_class_logits, _ = self._topk(
-            class_embeddings, class_logits,
-        )
-        return topk_class_embeddings, topk_class_logits
+        topk_class_logits, topk_indices = torch.topk(class_logits.detach(), k=self._kappa, dim=-1)
+        return topk_class_logits, topk_indices
 
 
 @MIL_CLASSIFIERS.register_module()
