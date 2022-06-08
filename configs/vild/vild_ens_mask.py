@@ -6,4 +6,4 @@ _base_ = [
 ]
 
 optimizer = dict(weight_decay=2.5e-5)
-optimizer_config = dict(grad_clip=dict(max_norm=40))
+optimizer_config = dict(grad_clip=None)

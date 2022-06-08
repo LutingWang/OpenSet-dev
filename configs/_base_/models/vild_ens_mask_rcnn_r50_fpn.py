@@ -4,16 +4,30 @@ _base_ = [
 
 model = dict(
     roi_head=dict(
-        type='ViLDRoIHead',
+        type='ViLDEnsembleRoIHead',
         bbox_head=dict(
-            _delete_=True,
             type='ViLDTextBBoxHead',
             num_classes=1203,
-            norm_cfg=dict(type='SyncBN', requires_grad=True),
-            reg_class_agnostic=True,
-            loss_bbox=dict(type='L1Loss', loss_weight=1.0),
+            bg_class_embedding=True,
             class_embeddings='data/lvis_v1/prompt/detpro_ViT-B-32.pt'),
-        distiller=dict(),
+        ensemble_head=dict(
+            type='ViLDImageBBoxHead',
+            distiller=dict(
+                losses=dict(
+                    bbox_kd=dict(
+                        tensor_names=['preds', 'targets'],
+                        type='L1Loss',
+                        weight=256)),
+                schedulers=[
+                    dict(
+                        iter_=200,
+                        tensor_names=['loss_bbox_kd'],
+                        type='WarmupScheduler')
+                ]),
+        ),
+        mask_head=dict(
+            num_classes=1203,
+        ),
         init_cfg=[
             dict(type='Xavier', layer='Linear'),
             dict(type='Normal', layer='Conv2d', std=0.01),
