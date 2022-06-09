@@ -17,13 +17,14 @@ model = dict(
                     bbox_kd=dict(
                         tensor_names=['preds', 'targets'],
                         type='L1Loss',
-                        weight=256)),
-                schedulers=[
-                    dict(
-                        iter_=200,
-                        tensor_names=['loss_bbox_kd'],
-                        type='WarmupScheduler')
-                ]),
+                        weight=dict(
+                            type='WarmupScheduler',
+                            value=256,
+                            iter_=200,
+                        ),
+                    ),
+                ),
+            ),
         ),
         mask_head=dict(
             num_classes=1203,

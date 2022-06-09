@@ -1,11 +1,14 @@
 from typing import List, Optional, Tuple
 
+import einops
+
 from mmdet.core.mask.structures import BitmapMasks
 import torch
 import todd.reproduction
 from mmcv import ConfigDict
 from mmcv.runner import BaseModule, ModuleList
 from mmdet.models import DETECTORS, NECKS, FPN, TwoStageDetector
+import torch.nn.functional as F
 
 from ..datasets import LVIS_V1_SEEN_866_337
 from .classifiers import BaseMILClassifier, MIL_CLASSIFIERS, ClassificationResult
@@ -23,12 +26,11 @@ class CAFENeck(BaseModule):
         self, 
         *,
         in_channels: List[int],
-        plv_channels: int,
         out_channels: int,
         num_outs: int,
         mil_classifier: ConfigDict,
-        glip_refine_level: int,
-        glip_refine_layers: int,
+        pre: ConfigDict,
+        post: ConfigDict,
         class_embeddings: str = 'data/lvis_v1/prompt/detpro_ViT-B-32.pt', 
         norm_cfg: Optional[ConfigDict] = None,
         init_cfg: Optional[ConfigDict] = None,
@@ -54,7 +56,7 @@ class CAFENeck(BaseModule):
         self._pre = PreFPN(
             channels=in_channels, 
             embedding_dim=embedding_dim,
-            hidden_dim=plv_channels,
+            **pre,
         )
 
         self._fpn = FPN(
@@ -67,9 +69,8 @@ class CAFENeck(BaseModule):
 
         self._post = PostFPN(
             channels=out_channels,
-            refine_level=glip_refine_level,
-            refine_layers=glip_refine_layers,
             init_cfg=init_cfg,
+            **post,
         )
 
         seen_ids = LVIS_V1_SEEN_866_337
@@ -108,12 +109,28 @@ class CAFENeck(BaseModule):
         class_embeddings = self._mil_classifier.index(class_embeddings, indices)
         class_weights = class_logits.detach().sigmoid()
 
-        # gt_masks = gt_masks[indices]
-
         x = self._pre(x, class_embeddings, class_weights)
         x = self._fpn(x)
+
+        downsample = self._post._refine_level + 2
+        b, _, h, w = x[self._post._refine_level].shape
+        gt_masks_ = class_embeddings.new_zeros((b, self._mil_classifier._kappa, h, w))
+        for i, (gt_label, gt_mask) in enumerate(zip(gt_labels, gt_masks)):
+            if len(gt_mask) == 0:
+                continue
+            mil_label = self._seen_ids_mapper[gt_label]
+            indices_map = {index: i for i, index in enumerate(indices[i].tolist())}
+            indices_set = indices_map.keys() & set(mil_label.tolist())
+            gt_mask_: torch.Tensor = F.max_pool2d(
+                gt_mask.to_tensor(dtype=float, device=gt_masks_.device), 
+                2 ** downsample,
+            )
+            for index in indices_set:
+                gt_masks_[i, indices_map[index], :gt_mask_.shape[1], :gt_mask_.shape[2]] = \
+                    einops.reduce(gt_mask_[mil_label == index], 'n h w -> h w', 'max')
+
         x, post_fpn_losses = self._post.forward_train(
-            x, class_embeddings, class_weights, gt_masks,
+            x, class_embeddings, class_weights, gt_masks_,
         )
         return x, {**mil_losses, **post_fpn_losses}
 

@@ -1,5 +1,5 @@
 _base_ = [
-    '../vild/vild.py',
+    '../vild/vild_ens_mask.py',
 ]
 
 train_pipeline = [
@@ -51,7 +51,6 @@ model = dict(
         _delete_=True,
         type='CAFENeck',
         in_channels=[256, 512, 1024, 2048],
-        plv_channels=512,
         out_channels=256,
         num_outs=5,
         mil_classifier=dict(
@@ -60,10 +59,19 @@ model = dict(
             tau=0.07,
             loss_mil=dict(type='FocalWithLogitsLoss', weight=32),
             loss_image_kd=dict(type='L1Loss', weight=256)),
-        glip_refine_level=2,
-        glip_refine_layers=3,
-        norm_cfg=dict(type='SyncBN', requires_grad=True)),
-    init_cfg=dict(
-        type='Pretrained',
-        checkpoint='data/ckpts/detpro_mask_rcnn_r50_fpn_20e_lvis_v1_filter32.pth.converted'),
+        pre=dict(
+            hidden_dim=512,
+        ),
+        post=dict(
+            refine_level=2,
+            refine_layers=3,
+            post_loss=dict(
+                type='CrossEntropyLoss',
+                weight=dict(
+                    type='WarmupScheduler',
+                    iter_=200,
+                ),
+            ),
+        ),
+    ),
 )

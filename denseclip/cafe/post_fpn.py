@@ -1,10 +1,12 @@
 from typing import Dict, List, Optional, Tuple
 
+from mmcv import ConfigDict
 from mmcv.runner import BaseModule, ModuleList
 from timm.models.layers import DropPath
 import einops
 import einops.layers.torch
 import todd.reproduction
+from todd.losses import LOSSES
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -177,13 +179,13 @@ class Refine(BaseModule):
         bsf: torch.Tensor, 
         class_embeddings: torch.Tensor, 
         class_weights: Optional[torch.Tensor] = None,
-        gt_masks: Optional[torch.Tensor] = None,
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         bsf, class_embeddings, masks = self._fusion(
             bsf, class_embeddings, l_weights=class_weights, with_masks=True,
         )
         bsf = self._dyhead(bsf)
-        return bsf, class_embeddings, bsf.new_zeros([], requires_grad=True)
+
+        return bsf, class_embeddings, masks
 
     def forward_test(
         self, 
@@ -205,6 +207,7 @@ class PostFPN(BaseModule):
         channels: int,
         refine_level: int,
         refine_layers: int, 
+        post_loss: ConfigDict,
         **kwargs,
     ):
         super().__init__(*args, **kwargs)
@@ -216,6 +219,7 @@ class PostFPN(BaseModule):
                 bi_direct=(l != refine_layers - 1),
             ) for l in range(refine_layers)
         )
+        self._post_loss = LOSSES.build(post_loss)
 
     @todd.reproduction.set_seed_temp('GLIPNeck')
     def init_weights(self):
@@ -249,14 +253,24 @@ class PostFPN(BaseModule):
     ) -> Tuple[torch.Tensor, Dict[str, List[torch.Tensor]]]:
         bsf = self._gather(feats)
 
+        gt_masks: torch.Tensor = einops.rearrange(gt_masks, 'n c h w -> n h w c')
+        weight: torch.Tensor = einops.reduce(gt_masks, 'n h w c -> n h w', reduction='sum').eq(1.0)
+        gt_masks = torch.argmax(gt_masks[weight], dim=-1)
+
         losses = []
         for refine in self._refines:
-            bsf, class_embeddings, loss = refine.forward_train(bsf, class_embeddings, class_weights, gt_masks)
+            bsf, class_embeddings, masks = refine.forward_train(bsf, class_embeddings, class_weights)
+            if gt_masks.numel() > 0:
+                masks: torch.Tensor = einops.rearrange(masks, 'n c h w -> n h w c')
+                masks = masks[weight] / 0.07
+                loss = self._post_loss(masks.softmax(dim=-1), gt_masks)
+            else:
+                loss = bsf.new_zeros([])
             losses.append(loss)
         assert class_embeddings is None
 
         feats = self._scatter(feats, bsf)
-        return feats, dict(glip_losses=losses)
+        return feats, dict(post_losses=losses)
 
     def forward_test(
         self, 
