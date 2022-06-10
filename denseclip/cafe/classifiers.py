@@ -82,7 +82,7 @@ class BaseMILClassifier(Classifier):
         embedding_dim: int,
         kappa: int = 35, 
         loss_mil: ConfigDict = None,
-        loss_image_kd: ConfigDict = None,
+        loss_mil_kd: ConfigDict = None,
         **kwargs,
     ):
         super().__init__(*args, **kwargs)
@@ -92,7 +92,7 @@ class BaseMILClassifier(Classifier):
         self._kappa = kappa
         self._adapt = self._build_adapt()
         self._loss_mil = None if loss_mil is None else LOSSES.build(loss_mil)
-        self._loss_image_kd = None if loss_image_kd is None else LOSSES.build(loss_image_kd)
+        self._loss_mil_kd = None if loss_mil_kd is None else LOSSES.build(loss_mil_kd)
         self._loss_scheduler = todd.schedulers.WarmupScheduler(iter_=1000)
 
     @todd.reproduction.set_seed_temp('mil_classifier')
@@ -156,8 +156,8 @@ class BaseMILClassifier(Classifier):
         topk_class_logits, topk_indices = torch.topk(class_logits.detach(), k=self._kappa, dim=-1)
         self._add_gts(topk_class_logits, topk_indices, class_logits.detach(), mil_labels)
         loss_mil = self._loss_mil(class_logits, mil_labels) * self._loss_scheduler
-        loss_image_kd = self._loss_image_kd(image_features, F.normalize(gt_image_features))
-        losses = dict(loss_mil=loss_mil, loss_image_kd=loss_image_kd)
+        loss_mil_kd = self._loss_mil_kd(image_features, F.normalize(gt_image_features))
+        losses = dict(loss_mil=loss_mil, loss_mil_kd=loss_mil_kd)
         return topk_class_logits, topk_indices, losses
 
     def forward_test(

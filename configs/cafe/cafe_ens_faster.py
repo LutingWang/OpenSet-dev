@@ -58,12 +58,14 @@ model = dict(
             kappa=35,
             tau=0.07,
             loss_mil=dict(type='FocalWithLogitsLoss', weight=32),
-            loss_image_kd=dict(type='L1Loss', weight=256)),
+            loss_mil_kd=dict(type='L1Loss', weight=256)),
         pre=dict(
+            type='PLV',
             hidden_dim=512,
         ),
         post=dict(
             refine_level=2,
+            refine_type='ConvRefine',
             refine_layers=3,
             post_loss=dict(
                 type='CrossEntropyLoss',
@@ -75,7 +77,4 @@ model = dict(
             ),
         ),
     ),
-    init_cfg=dict(
-        type='Pretrained',
-        checkpoint='data/ckpts/detpro_mask_rcnn_r50_fpn_20e_lvis_v1_filter32.pth.converted'),
 )

@@ -6,8 +6,13 @@ import todd.reproduction
 import torch
 import torch.nn as nn
 from mmcv.runner import BaseModule, ModuleList
+from todd import Registry
 
 
+PRE_FPNS = Registry('pre fpns')
+
+
+@PRE_FPNS.register_module()
 class PLV(BaseModule):
     def __init__(
         self, *args, v_dim: int, l_dim: int, hidden_dim: int, **kwargs,
@@ -63,15 +68,22 @@ class PreFPN(BaseModule):
         channels: List[int], 
         embedding_dim: int,
         hidden_dim: int,
+        type: str,
         **kwargs,
     ):
         super().__init__(*args, **kwargs)
-        self._plvs = ModuleList([
-            PLV(v_dim=channel, l_dim=embedding_dim, hidden_dim=hidden_dim)
-            for channel in channels
+        self._refines = ModuleList([
+            PRE_FPNS.build(
+                dict(
+                    type=type,
+                    v_dim=channel, 
+                    l_dim=embedding_dim, 
+                    hidden_dim=hidden_dim,
+                ),
+            ) for channel in channels
         ])
 
-    @todd.reproduction.set_seed_temp('PLVNeck')
+    @todd.reproduction.set_seed_temp('PreFPN')
     def init_weights(self):
         return super().init_weights()
 
@@ -82,7 +94,7 @@ class PreFPN(BaseModule):
         class_weights: torch.Tensor,
     ):
         x = tuple(
-            plv(feat, class_embeddings, l_weights=class_weights) 
-            for plv, feat in zip(self._plvs, x)
+            refine(feat, class_embeddings, l_weights=class_weights) 
+            for refine, feat in zip(self._refines, x)
         )
         return x

@@ -4,6 +4,7 @@ import torch
 from mmdet.core import PRIOR_GENERATORS, AnchorGenerator as _AnchorGenerator
 from mmdet.models import DETECTORS, TwoStageDetector as _TwoStageDetector
 from mmdet.models.necks.dyhead import DyHeadBlock as _DyHeadBlock
+import todd
 import todd.reproduction
 
 
@@ -31,8 +32,8 @@ class AnchorGenerator(_AnchorGenerator):
         super().__init__(*args, **kwargs)
         self._with_pos = False
 
-    def with_pos(self, mode: bool = True) -> todd.utils.setattr_temp:
-        return todd.utils.setattr_temp(self, '_with_pos', mode)
+    def with_pos(self, mode: bool = True) -> todd.setattr_temp:
+        return todd.setattr_temp(self, '_with_pos', mode)
 
     # def grid_anchors(
     #     self, 

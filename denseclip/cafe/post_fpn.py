@@ -2,6 +2,7 @@ from typing import Dict, List, Optional, Tuple
 
 from mmcv import ConfigDict
 from mmcv.runner import BaseModule, ModuleList
+from mmcv.cnn import ConvModule
 from timm.models.layers import DropPath
 import einops
 import einops.layers.torch
@@ -10,8 +11,12 @@ from todd.losses import LOSSES
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from todd import Registry
 
 from .mmdet_patch import DyHeadBlock
+
+
+POST_FPNS = Registry('post fpns')
 
 
 class Fusion(BaseModule):
@@ -158,11 +163,13 @@ class Fusion(BaseModule):
         return attn_weights
 
 
-class Refine(BaseModule):
+class BaseRefine(BaseModule):
+    _image_refine: nn.Module
+    _text_refine: nn.Module
+
     def __init__(
         self, 
         *args, 
-        channels: int, 
         avg_factor: int, 
         bi_direct: bool,
         **kwargs,
@@ -172,7 +179,6 @@ class Refine(BaseModule):
             avg_factor=avg_factor, 
             bi_direct=bi_direct,
         )
-        self._dyhead = DyHeadBlock(channels, channels)
 
     def forward_train(
         self, 
@@ -183,7 +189,8 @@ class Refine(BaseModule):
         bsf, class_embeddings, masks = self._fusion(
             bsf, class_embeddings, l_weights=class_weights, with_masks=True,
         )
-        bsf = self._dyhead(bsf)
+        bsf = self._image_refine(bsf)
+        class_embeddings = self._text_refine(class_embeddings)
 
         return bsf, class_embeddings, masks
 
@@ -196,8 +203,31 @@ class Refine(BaseModule):
         bsf, class_embeddings, _ = self._fusion(
             bsf, class_embeddings, l_weights=class_weights, with_masks=False,
         )
-        bsf = self._dyhead(bsf)
+        bsf = self._image_refine(bsf)
+        class_embeddings = self._text_refine(class_embeddings)
         return bsf, class_embeddings
+
+
+@POST_FPNS.register_module()
+class DyHeadRefine(BaseRefine):
+    def __init__(self, *args, channels: int, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._text_refine = nn.Identity()
+        self._image_refine = DyHeadBlock(channels, channels)
+
+
+@POST_FPNS.register_module()
+class ConvRefine(BaseRefine):
+    def __init__(self, *args, channels: int, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._text_refine = nn.Identity()
+        self._image_refine = ConvModule(
+            in_channels=channels, 
+            out_channels=channels,
+            kernel_size=3,
+            padding=1,
+            norm_cfg=dict(type='BN'),
+        )
 
 
 class PostFPN(BaseModule):
@@ -206,22 +236,26 @@ class PostFPN(BaseModule):
         *args,
         channels: int,
         refine_level: int,
+        refine_type: str,
         refine_layers: int, 
         post_loss: ConfigDict,
         **kwargs,
     ):
         super().__init__(*args, **kwargs)
         self._refine_level = refine_level
-        self._refines: List[Refine] = ModuleList(
-            Refine(
-                channels=channels,
-                avg_factor=refine_layers,
-                bi_direct=(l != refine_layers - 1),
+        self._refines: List[BaseRefine] = ModuleList(
+            POST_FPNS.build(
+                dict(
+                    type=refine_type,
+                    channels=channels,
+                    avg_factor=refine_layers,
+                    bi_direct=(l != refine_layers - 1),
+                ),
             ) for l in range(refine_layers)
         )
         self._post_loss = LOSSES.build(post_loss)
 
-    @todd.reproduction.set_seed_temp('GLIPNeck')
+    @todd.reproduction.set_seed_temp('PostFPN')
     def init_weights(self):
         return super().init_weights()
 

@@ -58,7 +58,7 @@ model = dict(
             kappa=35,
             tau=0.07,
             loss_mil=dict(type='FocalWithLogitsLoss', weight=32),
-            loss_image_kd=dict(type='L1Loss', weight=256)),
+            loss_mil_kd=dict(type='L1Loss', weight=256)),
         pre=dict(
             hidden_dim=512,
         ),
