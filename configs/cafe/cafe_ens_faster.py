@@ -68,10 +68,10 @@ model = dict(
             refine_type='ConvRefine',
             refine_layers=3,
             post_loss=dict(
-                type='CrossEntropyLoss',
+                type='BCEWithLogitsLoss',
                 weight=dict(
                     type='WarmupScheduler',
-                    value=0.1,
+                    value=0.01,
                     iter_=200,
                 ),
             ),

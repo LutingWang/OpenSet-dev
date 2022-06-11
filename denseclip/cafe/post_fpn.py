@@ -226,7 +226,7 @@ class ConvRefine(BaseRefine):
             out_channels=channels,
             kernel_size=3,
             padding=1,
-            norm_cfg=dict(type='BN'),
+            norm_cfg=dict(type='SyncBN'),
         )
 
 
@@ -288,8 +288,8 @@ class PostFPN(BaseModule):
         bsf = self._gather(feats)
 
         gt_masks: torch.Tensor = einops.rearrange(gt_masks, 'n c h w -> n h w c')
-        weight: torch.Tensor = einops.reduce(gt_masks, 'n h w c -> n h w', reduction='sum').eq(1.0)
-        gt_masks = torch.argmax(gt_masks[weight], dim=-1)
+        weight: torch.Tensor = einops.reduce(gt_masks, 'n h w c -> n h w', reduction='sum').ge(1.0)
+        gt_masks = gt_masks[weight]
 
         losses = []
         for refine in self._refines:
@@ -297,7 +297,7 @@ class PostFPN(BaseModule):
             if gt_masks.numel() > 0:
                 masks: torch.Tensor = einops.rearrange(masks, 'n c h w -> n h w c')
                 masks = masks[weight] / 0.07
-                loss = self._post_loss(masks.softmax(dim=-1), gt_masks)
+                loss = self._post_loss(masks, gt_masks)
             else:
                 loss = bsf.new_zeros([])
             losses.append(loss)
