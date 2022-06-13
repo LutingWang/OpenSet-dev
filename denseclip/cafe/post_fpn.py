@@ -76,7 +76,7 @@ class Fusion(BaseModule):
         *,
         v_weights: Optional[torch.Tensor] = None,
         l_weights: Optional[torch.Tensor] = None,
-        with_masks: bool = False,
+        # with_masks: bool = False,
     ) -> Tuple[torch.Tensor, Optional[torch.Tensor], Optional[torch.Tensor]]:
         h, w = v.shape[-2:]
         v = einops.rearrange(v, 'b c h w -> b (h w) c')
@@ -87,13 +87,13 @@ class Fusion(BaseModule):
         attn_weights = self._attn_weights(v, l)
         delta_v = self._attn_v(attn_weights, l, l_weights)
 
-        if with_masks:
-            masks = einops.reduce(
-                attn_weights, '(b num_heads) (h w) l -> b l h w', 
-                num_heads=self._num_heads, h=h, w=w, reduction='mean',
-            )
-        else:
-            masks = None
+        # if with_masks:
+        #     masks = einops.reduce(
+        #         attn_weights, '(b num_heads) (h w) l -> b l h w', 
+        #         num_heads=self._num_heads, h=h, w=w, reduction='mean',
+        #     )
+        # else:
+        #     masks = None
 
         if self._bi_direct:
             attn_weights = einops.rearrange(attn_weights, 'b hw l -> b l hw')
@@ -105,7 +105,8 @@ class Fusion(BaseModule):
 
         v = v + self._drop_path(self._gamma_v * delta_v)
         v = einops.rearrange(v, 'b (h w) c -> b c h w', h=h, w=w)
-        return v, l, masks
+        # return v, l, masks
+        return v, l
 
     def _attn_l(
         self, 
@@ -186,13 +187,13 @@ class BaseRefine(BaseModule):
         class_embeddings: torch.Tensor, 
         class_weights: Optional[torch.Tensor] = None,
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        bsf, class_embeddings, masks = self._fusion(
-            bsf, class_embeddings, l_weights=class_weights, with_masks=True,
+        bsf, class_embeddings = self._fusion(
+            bsf, class_embeddings, l_weights=class_weights,
         )
         bsf = self._image_refine(bsf)
         class_embeddings = self._text_refine(class_embeddings)
 
-        return bsf, class_embeddings, masks
+        return bsf, class_embeddings
 
     def forward_test(
         self, 
@@ -200,8 +201,8 @@ class BaseRefine(BaseModule):
         class_embeddings: torch.Tensor, 
         class_weights: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
-        bsf, class_embeddings, _ = self._fusion(
-            bsf, class_embeddings, l_weights=class_weights, with_masks=False,
+        bsf, class_embeddings = self._fusion(
+            bsf, class_embeddings, l_weights=class_weights,
         )
         bsf = self._image_refine(bsf)
         class_embeddings = self._text_refine(class_embeddings)
@@ -283,28 +284,36 @@ class PostFPN(BaseModule):
         feats: Tuple[torch.Tensor], 
         class_embeddings: torch.Tensor, 
         class_weights: Optional[torch.Tensor] = None, 
-        gt_masks: Optional[torch.Tensor] = None,
+        # gt_masks: Optional[torch.Tensor] = None,
     ) -> Tuple[torch.Tensor, Dict[str, List[torch.Tensor]]]:
         bsf = self._gather(feats)
 
-        gt_masks: torch.Tensor = einops.rearrange(gt_masks, 'n c h w -> n h w c')
-        weight: torch.Tensor = einops.reduce(gt_masks, 'n h w c -> n h w', reduction='sum').ge(1.0)
-        gt_masks = gt_masks[weight]
+        # gt_masks: torch.Tensor = einops.rearrange(gt_masks, 'n c h w -> n h w c')
+        # weight: torch.Tensor = einops.reduce(gt_masks, 'n h w c -> n h w', reduction='sum').ge(1.0)
+        # gt_masks = gt_masks[weight]
 
-        losses = []
+        # losses = []
+        # accs = []
+        # tprs = []
         for refine in self._refines:
-            bsf, class_embeddings, masks = refine.forward_train(bsf, class_embeddings, class_weights)
-            if gt_masks.numel() > 0:
-                masks: torch.Tensor = einops.rearrange(masks, 'n c h w -> n h w c')
-                masks = masks[weight] / 0.07
-                loss = self._post_loss(masks, gt_masks)
-            else:
-                loss = bsf.new_zeros([])
-            losses.append(loss)
+            bsf, class_embeddings = refine.forward_train(bsf, class_embeddings, class_weights)
+            # if gt_masks.numel() > 0:
+            #     masks: torch.Tensor = einops.rearrange(masks, 'n c h w -> n h w c')
+            #     masks = masks[weight] / 0.07
+            #     loss = self._post_loss(masks, gt_masks)
+            #     masks = masks.detach().sigmoid()
+            #     acc = (masks + gt_masks - 1).abs().sum() / gt_masks.numel()
+            #     tpr = masks[gt_masks.bool()].sum() / gt_masks.sum()
+            # else:
+            #     loss = acc = tpr = bsf.new_zeros([])
+            # losses.append(loss)
+            # accs.append(acc)
+            # tprs.append(tpr)
         assert class_embeddings is None
 
         feats = self._scatter(feats, bsf)
-        return feats, dict(post_losses=losses)
+        # return feats, dict(post_losses=losses, post_accs=torch.mean(accs), post_tprs=torch.mean(tprs))
+        return feats
 
     def forward_test(
         self, 

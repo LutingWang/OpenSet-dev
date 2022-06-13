@@ -92,7 +92,6 @@ class CAFENeck(BaseModule):
         self, 
         x: List[torch.Tensor], 
         gt_labels: List[torch.Tensor], 
-        gt_masks: List[BitmapMasks],
         gt_image_features: torch.Tensor,
     ):
         mil_labels = gt_image_features.new_zeros((len(gt_labels), len(self._seen_ids)))
@@ -112,27 +111,28 @@ class CAFENeck(BaseModule):
         x = self._pre(x, class_embeddings, class_weights)
         x = self._fpn(x)
 
-        downsample = self._post._refine_level + 2
-        b, _, h, w = x[self._post._refine_level].shape
-        gt_masks_ = class_embeddings.new_zeros((b, self._mil_classifier._kappa, h, w))
-        for i, (gt_label, gt_mask) in enumerate(zip(gt_labels, gt_masks)):
-            if len(gt_mask) == 0:
-                continue
-            mil_label = self._seen_ids_mapper[gt_label]
-            indices_map = {index: i for i, index in enumerate(indices[i].tolist())}
-            indices_set = indices_map.keys() & set(mil_label.tolist())
-            gt_mask_: torch.Tensor = F.max_pool2d(
-                gt_mask.to_tensor(dtype=float, device=gt_masks_.device), 
-                2 ** downsample,
-            )
-            for index in indices_set:
-                gt_masks_[i, indices_map[index], :gt_mask_.shape[1], :gt_mask_.shape[2]] = \
-                    einops.reduce(gt_mask_[mil_label == index], 'n h w -> h w', 'max')
+        # downsample = self._post._refine_level + 2
+        # b, _, h, w = x[self._post._refine_level].shape
+        # gt_masks_ = class_embeddings.new_zeros((b, self._mil_classifier._kappa, h, w))
+        # for i, (gt_label, gt_mask) in enumerate(zip(gt_labels, gt_masks)):
+        #     if len(gt_mask) == 0:
+        #         continue
+        #     mil_label = self._seen_ids_mapper[gt_label]
+        #     indices_map = {index: i for i, index in enumerate(indices[i].tolist())}
+        #     indices_set = indices_map.keys() & set(mil_label.tolist())
+        #     gt_mask_: torch.Tensor = F.max_pool2d(
+        #         gt_mask.to_tensor(dtype=float, device=gt_masks_.device), 
+        #         2 ** downsample,
+        #     )
+        #     for index in indices_set:
+        #         gt_masks_[i, indices_map[index], :gt_mask_.shape[1], :gt_mask_.shape[2]] = \
+        #             einops.reduce(gt_mask_[mil_label == index], 'n h w -> h w', 'max')
 
-        x, post_fpn_losses = self._post.forward_train(
-            x, class_embeddings, class_weights, gt_masks_,
+        x = self._post.forward_train(
+            x, class_embeddings, class_weights,
         )
-        return x, {**mil_losses, **post_fpn_losses}
+        # return x, {**mil_losses, **post_fpn_losses}
+        return x, mil_losses
 
     def forward_test(self, x: List[torch.Tensor]) -> List[torch.Tensor]:
         class_embeddings = self.class_embeddings
@@ -165,12 +165,12 @@ class CAFE(TwoStageDetector):
         gt_bboxes: List[torch.Tensor], 
         gt_labels: List[torch.Tensor], 
         *,
-        gt_masks: List[BitmapMasks], 
+        gt_masks: List[BitmapMasks] = None, 
         image_embeddings: torch.Tensor,
         **kwargs,
     ):
         x = self.backbone(img)
-        x, cafe_losses = self.neck.forward_train(x, gt_labels, gt_masks, image_embeddings)
+        x, cafe_losses = self.neck.forward_train(x, gt_labels, image_embeddings)
 
         proposal_cfg = self.train_cfg.get('rpn_proposal', self.test_cfg.rpn)
         with todd.reproduction.set_seed_temp(3407):

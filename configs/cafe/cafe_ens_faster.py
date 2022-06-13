@@ -12,7 +12,7 @@ train_pipeline = [
         data_root='data/lvis_v1/proposal_embeddings10/',
         min_bbox_area=1024,
         detpro=True),
-    dict(type='LoadAnnotations', with_bbox=True, with_mask=True),
+    dict(type='LoadAnnotations', with_bbox=True),
     dict(
         type='Resize',
         img_scale=[(1333, 640), (1333, 800)],
@@ -34,7 +34,7 @@ train_pipeline = [
     dict(
         type='Collect',
         keys=[
-            'img', 'image_embeddings', 'gt_bboxes', 'gt_labels', 'gt_masks',
+            'img', 'image_embeddings', 'gt_bboxes', 'gt_labels',
             'bboxes', 'bbox_embeddings'
         ]),
 ]
