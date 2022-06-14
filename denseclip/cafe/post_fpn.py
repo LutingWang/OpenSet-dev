@@ -239,7 +239,7 @@ class PostFPN(BaseModule):
         refine_level: int,
         refine_type: str,
         refine_layers: int, 
-        post_loss: ConfigDict,
+        # post_loss: ConfigDict,
         **kwargs,
     ):
         super().__init__(*args, **kwargs)
@@ -254,7 +254,7 @@ class PostFPN(BaseModule):
                 ),
             ) for l in range(refine_layers)
         )
-        self._post_loss = LOSSES.build(post_loss)
+        # self._post_loss = LOSSES.build(post_loss)
 
     @todd.reproduction.set_seed_temp('PostFPN')
     def init_weights(self):

@@ -47,7 +47,7 @@ def debug_init(debug: bool, cfg: Config):
         cfg.fp16 = None
     if has_debug_flag(5):
         cfg.data.samples_per_gpu = 2
-    if has_debug_flag(6):
+    if has_debug_flag(6) and 'evaluation' in cfg:
         cfg.evaluation.interval = 1
 
 

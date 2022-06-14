@@ -1,5 +1,5 @@
 _base_ = [
-    'feature_extractor.py',
+    'lvis.py',
 ]
 
 pipeline = [

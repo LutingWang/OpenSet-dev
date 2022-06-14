@@ -7,8 +7,8 @@ dataset_type = 'LVISV1GZSLDataset'
 data_root = 'data/lvis_v1/'
 img_prefix = 'data/coco/'
 data = dict(
-    samples_per_gpu=2,
-    workers_per_gpu=6,
+    samples_per_gpu=1,
+    workers_per_gpu=4,
     train=dict(
         type=dataset_type,
         ann_file=data_root + 'annotations/lvis_v1_train.json',
@@ -28,6 +28,5 @@ data = dict(
 model = dict(
     type='CLIPFeatureExtractor',
     clip_model='pretrained/clip/ViT-B-32.pt',
-    backbone=dict(),
 )
 runner = dict(max_epochs=1)

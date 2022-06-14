@@ -52,9 +52,8 @@ class LoadImageFromCLIP:
 
 @PIPELINES.register_module()
 class LoadImageFromRegions:
-    def __init__(self, n_px: int, transforms: List[ConfigDict] = None):
+    def __init__(self, n_px: int):
         self._n_px = n_px
-        self._transforms = None if transforms is None else Compose(transforms)
         self._preprocess = clip.clip._transform(n_px)
 
     def __call__(self, results: dict) -> dict:
@@ -68,20 +67,16 @@ class LoadImageFromRegions:
         else:
             raise ValueError(f"Unexpected bbox_fields: {results['bbox_fields']}")
 
-        bboxes = results[bbox_field]
+        bboxes: np.ndarray = results[bbox_field]
         if has_debug_flag(3):
             bboxes = bboxes[:5]
-        bboxes = BBoxesXYXY(bboxes)
-        # bboxes = bboxes[bboxes.areas > 32 * 32]
 
-        if bboxes.empty:
+        if bboxes.shape[0] == 0:
             regions = torch.zeros(0, 3, self._n_px, self._n_px)
         else:
-            if self._transforms is None:
-                bboxes_ = bboxes
-            else:
-                results = self._transforms(results)
-                bboxes_ = BBoxesXYXY(results[bbox_field])
+            bboxes_xyxy = BBoxesXYXY(bboxes)
+            bboxes_xyxy = bboxes_xyxy[bboxes_xyxy.areas > 32 * 32]
+            bboxes = bboxes_xyxy.to_tensor()
 
             if 'img_fields' not in results or len(results['img_fields']) == 0:
                 filename = os.path.join(
@@ -96,15 +91,15 @@ class LoadImageFromRegions:
             else:
                 raise ValueError(f"Unexpected img_fields: {results['img_fields']}")
 
-            bboxes_15 = bboxes_.expand(ratio=1.5, image_shape=(image.height, image.width))
-            bboxes_ = bboxes_ + bboxes_15
+            bboxes_xyxy_15 = bboxes_xyxy.expand(ratio=1.5, image_shape=(image.height, image.width))
+            bboxes_xyxy = bboxes_xyxy + bboxes_xyxy_15
             regions = torch.stack([
                 self._preprocess(image.crop(bbox)) 
-                for bbox in bboxes_.round().to_tensor().int().tolist()
+                for bbox in bboxes_xyxy.round().to_tensor().int().tolist()
             ])
         image.close()
         results['img'] = DC(regions)
-        results['bboxes'] = DC(bboxes.to_tensor())
+        results['bboxes'] = DC(bboxes)
         results['img_fields'] = ['img']
         results['bbox_fields'] = ['bboxes']
 
@@ -117,7 +112,7 @@ class CLIPFeatureExtractor(BaseDetector):
     CLASSES: Tuple[str]
 
     def __init__(self, *args, clip_model: str = 'pretrained/clip/RN50.pt', data_root: str, **kwargs):
-        super().__init__(*args, **kwargs)
+        super().__init__()
         model, _ = clip.load(clip_model)
         self._model: clip.model.CLIP = todd.reproduction.freeze_model(model)
         self._loss = nn.Parameter(torch.zeros([]), requires_grad=True)

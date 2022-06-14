@@ -57,7 +57,7 @@ model = dict(
             type='DyHeadClassifier',
             kappa=35,
             tau=0.07,
-            loss_mil=dict(type='FocalWithLogitsLoss', weight=32),
+            loss_mil=dict(type='FocalWithLogitsLoss', bound=0.4, weight=32),
             loss_mil_kd=dict(type='L1Loss', weight=256)),
         pre=dict(
             type='PLV',
@@ -67,14 +67,14 @@ model = dict(
             refine_level=2,
             refine_type='ConvRefine',
             refine_layers=3,
-            post_loss=dict(
-                type='BCEWithLogitsLoss',
-                weight=dict(
-                    type='WarmupScheduler',
-                    value=0.01,
-                    iter_=200,
-                ),
-            ),
+            # post_loss=dict(
+            #     type='BCEWithLogitsLoss',
+            #     weight=dict(
+            #         type='WarmupScheduler',
+            #         value=0.01,
+            #         iter_=200,
+            #     ),
+            # ),
         ),
     ),
 )

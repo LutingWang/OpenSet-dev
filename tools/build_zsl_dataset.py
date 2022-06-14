@@ -8,24 +8,25 @@ from typing import Dict, Set, Tuple, Type
 
 from mmcv import Config, ConfigDict
 from mmdet.datasets import CustomDataset
-from todd.logger import get_logger
+from todd.base import get_logger
 
 from denseclip import datasets
 from denseclip.utils import odps_init
 
 
-Datasets: Type[Tuple[CustomDataset]] = namedtuple('Datasets', ['train', 'val'])
-metas: Dict[str, Dict[str, Datasets]] = dict(
+metas: Dict[str, Dict[str, Dict[str, CustomDataset]]] = dict(
     CocoDataset={
-        '48_17': Datasets(
+        '48_17': dict(
             train=datasets.CocoZSLSeenDataset, 
             val=datasets.CocoGZSLDataset,
+            all=datasets.CocoGZSLDataset,
         ),
     },
     LVISV1Dataset={
-        '866_337': Datasets(
+        '866_337': dict(
             train=datasets.LVISV1ZSLSeenDataset, 
             val=datasets.LVISV1GZSLDataset,
+            all=datasets.LVISV1GZSLDataset,
         ),
     },
 )
@@ -52,14 +53,17 @@ def split_dataset(cfg: ConfigDict, split: str, train: bool):
         raise ValueError(f"Unknown split: {split}.")
     logger.info(f"Split: {split}")
 
-    save_file = Path(f'_{split}_4'.join(osp.splitext(cfg.ann_file)))
+    save_file = Path(f'_{split}_2'.join(osp.splitext(cfg.ann_file)))
     if save_file.exists():
         raise ValueError(f"{save_file} already exists.")
     logger.info(f"Saving to {save_file}.")
 
-    dataset = metas[cfg.type][split][not train]
-    expected_cats: Set[str] = set(dataset.CLASSES)
+    dataset = metas[cfg.type][split]
+    mode = 'train' if train else 'val'
+    expected_cats: Set[str] = set(dataset[mode].CLASSES)
+    all_cats: Set[str] = set(dataset['all'].CLASSES)
     logger.info(f"Expected categories: {len(expected_cats)}.")
+    logger.info(f"All categories: {len(all_cats)}.")
 
     with open(cfg.ann_file) as f:
         data = json.load(f)
@@ -71,6 +75,8 @@ def split_dataset(cfg: ConfigDict, split: str, train: bool):
     if len(expected_cats) == len(data['categories']):
         logger.info("No need to split.")
         return
+
+    data['categories'] = [cat for cat in data['categories'] if cat['name'] in all_cats]
 
     cat_ids: Set[int] = set()
     for cat in data['categories']:

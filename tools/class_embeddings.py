@@ -1,4 +1,5 @@
 import argparse
+import json
 import os
 import sys; sys.path.insert(0, '')
 from typing import List, Tuple
@@ -95,15 +96,9 @@ vild_templates = [
 ]
 
 
-def get_dataset_class(dataset: str) -> CustomDataset:
-    dataset_class_mapping = {
-        'coco': 'CocoDataset',
-        'lvis_v1': 'LVISV1GZSLDataset',
-    }
-    if dataset not in dataset_class_mapping:
-        raise ValueError(f'Unknown dataset: {dataset}')
-    dataset_class = dataset_class_mapping[dataset]
-    return DATASETS.get(dataset_class)
+def get_classes(ann_file: str) -> List[str]:
+    with open(ann_file) as f:
+        return [cat['name'] for cat in json.load(f)['categories']]
 
 
 def get_pretrained_filepath(pretrained: str) -> Tuple[str, str]:
@@ -121,11 +116,11 @@ def get_output_filepath(dataset: str, pretrained: str) -> str:
 
 
 def vild(args):
-    dataset = get_dataset_class(args.dataset)
+    classes = get_classes(args.ann_file)
     pretrained, pretrained_filepath = get_pretrained_filepath(args.pretrained)
     output_filepath = get_output_filepath(args.dataset, pretrained)
 
-    context_length = clip.tokenize(dataset.CLASSES).argmax(-1).max() + 9
+    context_length = clip.tokenize(classes).argmax(-1).max() + 9
 
     model: nn.Module = torch.jit.load(pretrained_filepath, map_location='cpu')
     state_dict = model.state_dict()
@@ -135,11 +130,11 @@ def vild(args):
     model.visual = EasyDict(
         conv1=model.token_embedding,  # hack self.teacher.dtype
     )
-    todd.utils.freeze_model(model)
+    todd.reproduction.freeze_model(model)
 
     class_embeddings = []
     for template in tqdm(vild_templates):
-        texts = clip.tokenize([template.format(c) for c in dataset.CLASSES], context_length=context_length)
+        texts = clip.tokenize([template.format(c) for c in classes], context_length=context_length)
         with torch.no_grad():
             embeddings = model.encode_text(texts)
             embeddings = F.normalize(embeddings)
@@ -153,6 +148,7 @@ def parse_args():
     parser = argparse.ArgumentParser(description="ViLD class embeddings")
     subparsers = parser.add_subparsers(help="Method")
     vild_parser = subparsers.add_parser('vild')
+    vild_parser.add_argument('--ann-file', default='data/coco/annotations/instances_train2017.json')
     vild_parser.add_argument('--dataset', default='coco')
     vild_parser.add_argument('--pretrained', default='RN50')
     vild_parser.set_defaults(func=vild)

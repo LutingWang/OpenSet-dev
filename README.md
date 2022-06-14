@@ -44,11 +44,12 @@ sh tools/odps_test.sh configs/rpn/rpn_r101_fpn_1x_coco_val.py data/ckpts/rpn_r10
 
 ```shell
 # for coco
-python tools/class_embeddings.py vild
+python tools/class_embeddings.py vild --ann-file data/coco/annotations/instances_train2017.json --dataset coco --pretrained "RN50"
+python tools/class_embeddings.py vild --ann-file data/coco/annotations/instances_train2017.json --dataset coco --pretrained "ViT-B/32"
 
 # for lvis
-python tools/class_embeddings.py vild --dataset lvis_v1
-python tools/class_embeddings.py vild --dataset lvis_v1 --pretrained "ViT-B/32"
+# python tools/class_embeddings.py vild --dataset lvis_v1 --pretrained RN50
+# python tools/class_embeddings.py vild --dataset lvis_v1 --pretrained "ViT-B/32"
 ```
 
 ## Generate Proposal Embeddings
